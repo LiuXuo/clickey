@@ -3,7 +3,11 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import type { OverlayActivatePayload, NativeKeyPayload, ClickAction } from "$lib/ipc/types";
+  import type {
+    OverlayActivatePayload,
+    NativeKeyPayload,
+    ClickAction,
+  } from "$lib/ipc/types";
   import { applyKey, createInitialState, getCurrentStep } from "$lib/core";
   import type { AppConfig, Region, RuntimeState } from "$lib/core";
 
@@ -126,7 +130,10 @@
         (event) => {
           config = event.payload.config;
           baseRegion = event.payload.region;
-          runtime = createInitialState(event.payload.config, event.payload.region);
+          runtime = createInitialState(
+            event.payload.config,
+            event.payload.region,
+          );
           clickAction = event.payload.clickAction;
           draw();
         },

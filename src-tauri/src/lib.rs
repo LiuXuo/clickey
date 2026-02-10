@@ -6,11 +6,11 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Mutex,
 };
+use tauri::{menu::Menu, menu::MenuItem, tray::TrayIconBuilder};
 use tauri::{
     AppHandle, Emitter, EventTarget, Manager, PhysicalPosition, PhysicalSize, Position, Size,
     State, WebviewUrl, WebviewWindowBuilder,
 };
-use tauri::{menu::Menu, menu::MenuItem, tray::TrayIconBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,7 +92,11 @@ struct AppState {
 }
 
 #[tauri::command]
-fn apply_config(app: AppHandle, state: State<'_, AppState>, config: AppConfig) -> Result<(), String> {
+fn apply_config(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: AppConfig,
+) -> Result<(), String> {
     println!("[config] apply_config called");
     let activation_ids = ActivationHotkeyIds::from_config(&config);
     {
@@ -142,18 +146,9 @@ fn native_click(app: AppHandle, payload: NativeClickPayload) -> Result<(), Strin
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let default_cfg = default_config();
-    let _ = parse_shortcut_or_panic(
-        "leftClick",
-        &default_cfg.hotkeys.activation.left_click,
-    );
-    let _ = parse_shortcut_or_panic(
-        "rightClick",
-        &default_cfg.hotkeys.activation.right_click,
-    );
-    let _ = parse_shortcut_or_panic(
-        "middleClick",
-        &default_cfg.hotkeys.activation.middle_click,
-    );
+    let _ = parse_shortcut_or_panic("leftClick", &default_cfg.hotkeys.activation.left_click);
+    let _ = parse_shortcut_or_panic("rightClick", &default_cfg.hotkeys.activation.right_click);
+    let _ = parse_shortcut_or_panic("middleClick", &default_cfg.hotkeys.activation.middle_click);
     let activation_ids = ActivationHotkeyIds::from_config(&default_cfg);
 
     let global_shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
@@ -245,11 +240,13 @@ fn register_tray(app: &AppHandle) -> tauri::Result<()> {
     let settings_id = settings_item.id().clone();
     let menu = Menu::with_items(app, &[&settings_item])?;
 
-    let mut builder = TrayIconBuilder::new().menu(&menu).on_menu_event(move |app, event| {
-        if event.id == settings_id {
-            show_settings(app);
-        }
-    });
+    let mut builder = TrayIconBuilder::new()
+        .menu(&menu)
+        .on_menu_event(move |app, event| {
+            if event.id == settings_id {
+                show_settings(app);
+            }
+        });
 
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
@@ -383,7 +380,9 @@ fn collect_overlay_keys(config: &AppConfig) -> Vec<String> {
     if let Some(preset) = preset {
         for layer in &preset.layers {
             match layer {
-                Layer::Single { keys: layer_keys, .. } => {
+                Layer::Single {
+                    keys: layer_keys, ..
+                } => {
                     keys.extend(layer_keys.iter().cloned());
                 }
                 Layer::Combo { stage0, stage1 } => {

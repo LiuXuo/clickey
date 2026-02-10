@@ -1,0 +1,7 @@
+node_modules
+.svelte-kit
+dist
+build
+coverage
+src-tauri/target
+package-lock.json

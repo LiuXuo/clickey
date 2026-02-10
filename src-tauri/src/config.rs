@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 // 与前端共享的默认配置（单一事实来源）
 pub const DEFAULT_CONFIG_JSON: &str = include_str!("../../src/lib/shared/default-config.json");
@@ -72,8 +72,15 @@ pub struct Preset {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "camelCase")]
 pub enum Layer {
-    Single { rows: u32, cols: u32, keys: Vec<String> },
-    Combo { stage0: GridStage, stage1: GridStage },
+    Single {
+        rows: u32,
+        cols: u32,
+        keys: Vec<String>,
+    },
+    Combo {
+        stage0: GridStage,
+        stage1: GridStage,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +114,5 @@ pub fn default_config() -> AppConfig {
     let json = DEFAULT_CONFIG_JSON
         .strip_prefix('\u{FEFF}')
         .unwrap_or(DEFAULT_CONFIG_JSON);
-    serde_json::from_str(json)
-        .expect("default-config.json should be valid AppConfig")
+    serde_json::from_str(json).expect("default-config.json should be valid AppConfig")
 }

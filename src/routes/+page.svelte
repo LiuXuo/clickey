@@ -46,7 +46,8 @@
   </section>
 
   <p class="hint">
-    Settings only edits configuration and applies it. Overlay runtime state is managed elsewhere.
+    Settings only edits configuration and applies it. Overlay runtime state is
+    managed elsewhere.
   </p>
 </main>
 

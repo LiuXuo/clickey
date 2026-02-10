@@ -80,7 +80,12 @@ export function applyKey(
     return { state, didAdvance: false };
   }
 
-  const nextRegion = cropRegion(state.region, step.rows, step.cols, keyIndex + 1);
+  const nextRegion = cropRegion(
+    state.region,
+    step.rows,
+    step.cols,
+    keyIndex + 1,
+  );
   const nextState = advanceState(state, preset, layer, nextRegion);
 
   if (nextState.done) {
