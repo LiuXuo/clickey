@@ -1,0 +1,67 @@
+{
+  "app": {
+    "tray": {
+      "enabled": true
+    },
+    "settingsWindow": {
+      "openFromTray": true
+    }
+  },
+  "hotkeys": {
+    "activation": {
+      "leftClick": "Ctrl+;",
+      "rightClick": "Ctrl+Shift+;",
+      "middleClick": "Ctrl+Shift+Alt+;"
+    },
+    "controls": {
+      "cancel": "Esc",
+      "undo": "Backspace",
+      "directClick": "Space"
+    }
+  },
+  "activePresetId": "3x3-default",
+  "presets": [
+    {
+      "id": "3x3-default",
+      "name": "3x3 (default)",
+      "layers": [
+        {
+          "mode": "combo",
+          "stage0": {
+            "rows": 3,
+            "cols": 3,
+            "keys": ["w", "e", "r", "s", "d", "f", "x", "c", "v"]
+          },
+          "stage1": {
+            "rows": 3,
+            "cols": 3,
+            "keys": ["u", "i", "o", "j", "k", "l", "m", ",", "."]
+          }
+        },
+        {
+          "mode": "single",
+          "rows": 3,
+          "cols": 3,
+          "keys": ["w", "e", "r", "s", "d", "f", "x", "c", "v"]
+        },
+        {
+          "mode": "single",
+          "rows": 3,
+          "cols": 3,
+          "keys": ["u", "i", "o", "j", "k", "l", "m", ",", "."]
+        }
+      ]
+    }
+  ],
+  "overlay": {
+    "alpha": 120,
+    "maskColor": "#000000",
+    "lineColor": "#ffffff",
+    "textColor": "#ffffff",
+    "lineWidthPx": 1,
+    "font": {
+      "family": "Segoe UI",
+      "sizePx": 12
+    }
+  }
+}
