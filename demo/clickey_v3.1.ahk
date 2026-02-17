@@ -6,59 +6,63 @@ ListLines, Off
 CoordMode, Mouse, Screen
 
 ; ========================== 说明 ==========================
-; 1) 现为 3 层（合并1+2 为 9x9 双键；第3/4层为 3x3 单键）：
-;    行键：wer / sdf / xcv
-;    列键：uio / jkl / m,.
-;    双键组合定位单元（行键+列键）
-;    第3层单键：wer / sdf / xcv
-;    第4层单键：uio / jkl / m,.
-; 3) 按键：Ctrl+; 左键 / Ctrl+Shift+; 右键 / Ctrl+Shift+Alt+; 中键
-; 4) Esc 取消；Backspace 回退上一个按键（无按键时退出）；Space 直接点击当前区域中心点
+; 1) 2 层结构：
+;    第 1 层：双键（先列后行，固定顺序）
+;    第 2 层：单键（3 行 x 5 列）
+; 2) 行键：y h n u j m i k , o l . p ; /
+;    列键：q a z w s x e d c r f v t g b
+; 3) 单键层：qwert / asdfg / zxcvb
+; 4) 微调（仅单键层生效）：方向键，仅 5px 步长
+; 5) 按键：Ctrl+; 左键 / Ctrl+Shift+; 右键 / Ctrl+Shift+Alt+; 中键
+; 6) 交互：Esc 取消；Backspace 回退；Space 直接点击当前区域中心点
 
 ; ========================== 运行状态 ==========================
-global g_active := false ; 是否已进入选择模式
+global g_active := false
 global g_button := ""
-global g_step := 0 ; 当前按键步骤(0-based)
+global g_step := 0
 global g_stage := 0 ; 0=行键 1=列键 2=单键
-global g_screen := {} ; 屏幕坐标(虚拟屏)
-global g_region := {} ; 当前可选区域
-global g_keys := [] ; 当前层级的按键列表
-global g_keyMap := {} ; 当前层级按键->索引
-global g_rowKeyMap := {} ; 行键->索引
-global g_colKeyMap := {} ; 列键->索引
-global g_selectedRowKey := "" ; 已选行键(列键阶段使用)
-global g_layers := [] ; 每层定义 {mode, ...}
+global g_screen := {}
+global g_region := {}
+global g_keys := []
+global g_keyMap := {}
+global g_rowKeyMap := {}
+global g_colKeyMap := {}
+global g_selectedRowKey := ""
+global g_layers := []
 global g_layerCount := 0
-global g_steps := [] ; 步骤表：{layerIndex, mode, stage, stepInLayer, stepsInLayer}
-global g_stepHistory := [] ; 按键栈：Backspace 回退上一个按键
+global g_steps := []
+global g_stepHistory := []
+global g_monitorIndex := 1
+
 ; ========================== 外观配置 ==========================
-global g_alpha := 120 ; 遮罩透明度(0-255)，越大越不透明
-global g_maskColor := "000000" ; 遮罩颜色
-global g_lineColor := "FFFFFF" ; 网格线颜色
-global g_textColor := "FFFFFF" ; 字体颜色
-global g_guiName := "Clickey"
+global g_alpha := 160
+global g_maskColor := "000000"
+global g_lineColor := "FFFFFF"
+global g_textColor := "FFFFFF"
+global g_guiName := "Clickey30x10"
 global g_hwnd := 0
-global g_guiScale := 1.0 ; DPI缩放系数 = A_ScreenDPI / 96
-global g_line := 1 ; 网格线粗细(像素)
-global g_rows := 9 ; 行数(由步骤切换)
-global g_cols := 9 ; 列数(由步骤切换)
-global g_font_size := 12 ; 当前层级字号(运行时切换)
+global g_guiScale := 1.0
+global g_fontScale := 1.0
+global g_line := 1
+global g_rows := 30
+global g_cols := 10
+global g_font_size := 8
 
 Clickey_Init()
 return
 
-^;::Clickey_Start("Left")            ; Ctrl+; 左键
-^+;::Clickey_Start("Right")          ; Ctrl+Shift+; 右键
-^+!;::Clickey_Start("Middle")        ; Ctrl+Shift+Alt+; 中键
-^!d::Clickey_Debug() ; Ctrl+Alt+D 调试信息
+^;::Clickey_Start("Left")
+^+;::Clickey_Start("Right")
+^+!;::Clickey_Start("Middle")
 
 Clickey_Start(button) {
-    global g_active, g_button, g_step, g_region, g_screen, g_layerCount, g_steps
+    global g_active, g_button, g_step, g_region, g_screen, g_steps
     global g_selectedRowKey, g_stepHistory
+    global g_monitorIndex
     if (g_active)
         return
 
-    ; 更新屏幕范围与初始区域
+    g_monitorIndex := 1
     Clickey_UpdateScreen()
     g_active := true
     g_button := button
@@ -71,7 +75,7 @@ Clickey_Start(button) {
     KeyWait, Alt
     Sleep, 30
 
-    g_stepHistory := [] ; 清空按键历史栈
+    g_stepHistory := []
     totalSteps := g_steps.Length()
     stepIndex := 1
     while (stepIndex <= totalSteps) {
@@ -86,7 +90,6 @@ Clickey_Start(button) {
             return
         }
         if (key = "__BACK__") {
-            ; Backspace 回退上一个按键
             if (g_stepHistory.Length() < 1) {
                 Clickey_HideOverlay()
                 g_active := false
@@ -99,20 +102,39 @@ Clickey_Start(button) {
             continue
         }
         if (key = "__SPACE__") {
-            ; Space 直接点击当前区域中心点，跳过后续层级
             Clickey_HideOverlay()
             Clickey_DoClick()
             g_active := false
             return
         }
-        ; 入栈当前状态，便于按键级回退
+        if (key = "__NEXT_MON__") {
+            Clickey_NextMonitor()
+            g_region := {x: g_screen.x, y: g_screen.y, w: g_screen.w, h: g_screen.h}
+            continue
+        }
+        if (key = "__NUDGE5_LEFT__") {
+            Clickey_Nudge(-5, 0)
+            continue
+        }
+        if (key = "__NUDGE5_RIGHT__") {
+            Clickey_Nudge(5, 0)
+            continue
+        }
+        if (key = "__NUDGE5_UP__") {
+            Clickey_Nudge(0, -5)
+            continue
+        }
+        if (key = "__NUDGE5_DOWN__") {
+            Clickey_Nudge(0, 5)
+            continue
+        }
+
         stepDef := g_steps[stepIndex]
         g_stepHistory.Push({step: stepIndex, x: g_region.x, y: g_region.y, w: g_region.w, h: g_region.h, rowKey: g_selectedRowKey})
+
         Clickey_ApplyKey(key)
-        if (stepDef.mode = "combo" && stepDef.stage = 0)
-            g_selectedRowKey := key
-        else
-            g_selectedRowKey := ""
+
+        g_selectedRowKey := ""
         stepIndex += 1
     }
 
@@ -123,44 +145,46 @@ Clickey_Start(button) {
 
 Clickey_ReadKey() {
     global g_keyMap
+    global g_stage
     Loop {
-        Input, key, L1, {Esc}{Backspace}{Space}
+        Input, key, L1, {Esc}{Backspace}{Space}{Left}{Right}{Up}{Down}{Tab}
         if (ErrorLevel = "EndKey:Escape")
             return ""
         if (ErrorLevel = "EndKey:Backspace")
             return "__BACK__"
         if (ErrorLevel = "EndKey:Space")
             return "__SPACE__"
-        ; 仅接受当前层级定义的按键
+        if (ErrorLevel = "EndKey:Tab")
+            return "__NEXT_MON__"
+        if (g_stage = 2) {
+            if (ErrorLevel = "EndKey:Left")
+                return "__NUDGE5_LEFT__"
+            if (ErrorLevel = "EndKey:Right")
+                return "__NUDGE5_RIGHT__"
+            if (ErrorLevel = "EndKey:Up")
+                return "__NUDGE5_UP__"
+            if (ErrorLevel = "EndKey:Down")
+                return "__NUDGE5_DOWN__"
+        }
         StringLower, key, key
         if (g_keyMap.HasKey(key))
             return key
-        SoundBeep, 900, 40
     }
 }
 
 Clickey_ApplyKey(key) {
     global g_region, g_stage, g_rowKeyMap, g_colKeyMap, g_keyMap, g_rows, g_cols
-    ; 将按键映射到网格坐标，并收缩可选区域（行键选3x3块，列键选块内3x3）
     if (g_stage = 0) {
-        idx := g_rowKeyMap[key]
-        blockRow := Ceil(idx / 3)
-        blockCol := Mod(idx - 1, 3) + 1
-        cellW := g_region.w / 3
-        cellH := g_region.h / 3
-        g_region.x := g_region.x + (blockCol - 1) * cellW
-        g_region.y := g_region.y + (blockRow - 1) * cellH
-        g_region.w := cellW
-        g_region.h := cellH
-    } else if (g_stage = 1) {
         idx := g_colKeyMap[key]
-        row := Ceil(idx / 3)
-        col := Mod(idx - 1, 3) + 1
-        cellW := g_region.w / 3
-        cellH := g_region.h / 3
+        col := idx
+        cellW := g_region.w / g_cols
         g_region.x := g_region.x + (col - 1) * cellW
-        g_region.y := g_region.y + (row - 1) * cellH
         g_region.w := cellW
+    } else if (g_stage = 1) {
+        idx := g_rowKeyMap[key]
+        row := idx
+        cellH := g_region.h / g_rows
+        g_region.y := g_region.y + (row - 1) * cellH
         g_region.h := cellH
     } else {
         idx := g_keyMap[key]
@@ -175,9 +199,37 @@ Clickey_ApplyKey(key) {
     }
 }
 
+Clickey_Nudge(dx, dy) {
+    global g_region, g_screen
+    newX := g_region.x + dx
+    newY := g_region.y + dy
+    maxX := g_screen.x + g_screen.w - g_region.w
+    maxY := g_screen.y + g_screen.h - g_region.h
+    if (newX < g_screen.x)
+        newX := g_screen.x
+    if (newX > maxX)
+        newX := maxX
+    if (newY < g_screen.y)
+        newY := g_screen.y
+    if (newY > maxY)
+        newY := maxY
+    g_region.x := newX
+    g_region.y := newY
+}
+
+Clickey_NextMonitor() {
+    global g_monitorIndex
+    SysGet, monCount, MonitorCount
+    if (monCount < 1)
+        return
+    g_monitorIndex += 1
+    if (g_monitorIndex > monCount)
+        g_monitorIndex := 1
+    Clickey_UpdateScreen()
+}
+
 Clickey_DoClick() {
     global g_region, g_button
-    ; 最终点击当前区域中心点
     cx := Round(g_region.x + g_region.w / 2.0)
     cy := Round(g_region.y + g_region.h / 2.0)
     MouseMove, %cx%, %cy%, 0
@@ -189,19 +241,16 @@ Clickey_ShowOverlay() {
     global g_maskColor, g_lineColor, g_textColor, g_rows, g_cols, g_font_size
     Clickey_HideOverlay()
 
-    Gui, %g_guiName%:New, +AlwaysOnTop -Caption +ToolWindow +LastFound
+    Gui, %g_guiName%:New, +AlwaysOnTop -Caption +ToolWindow +LastFound -DPIScale
     g_hwnd := WinExist()
     Gui, %g_guiName%:Color, %g_maskColor%
     Gui, %g_guiName%:Margin, 0, 0
-    Gui, %g_guiName%:Font, s%g_font_size% c%g_textColor%, Segoe UI
+    Gui, %g_guiName%:Font, s%g_font_size% c%g_textColor% Bold, Segoe UI
 
     stepIndex := g_step + 1
     stepDef := g_steps[stepIndex]
     layerIndex := stepDef.layerIndex
-    msg := "层 " layerIndex "/" g_layerCount " 键 " stepDef.stepInLayer "/" stepDef.stepsInLayer " (Esc取消 / Backspace回退 / Space点击)"
-    Gui, %g_guiName%:Add, Text, x10 y10 w300 h24 +BackgroundTrans, %msg%
 
-    ; 按DPI缩放系数换算GUI坐标
     scale := (g_guiScale > 0) ? g_guiScale : 1.0
     ox := Round((g_region.x - g_screen.x) / scale)
     oy := Round((g_region.y - g_screen.y) / scale)
@@ -217,7 +266,7 @@ Clickey_ShowOverlay() {
     sw := Round(g_screen.w / scale)
     sh := Round(g_screen.h / scale)
     line := g_line
-    ; 先画线再画字，避免线条遮挡文字
+
     Clickey_AddLine(ox, oy, rw, line)
     Clickey_AddLine(ox, oy, line, rh)
     Clickey_AddLine(ox, oy2, rw, line)
@@ -232,7 +281,7 @@ Clickey_ShowOverlay() {
         Clickey_AddLine(ox, ly, rw, line)
     }
 
-    Loop, %g_rows% { ; 逐格绘制字母
+    Loop, %g_rows% {
         row := A_Index
         Loop, %g_cols% {
             col := A_Index
@@ -252,33 +301,18 @@ Clickey_ShowOverlay() {
     Clickey_DrawDiagonals(ox, oy, ox2, oy2)
 }
 
-Clickey_Debug() {
-    ; 调试：查看当前屏幕/缩放信息
-    SysGet, monCount, MonitorCount
-    SysGet, vx, 76
-    SysGet, vy, 77
-    SysGet, vw, 78
-    SysGet, vh, 79
-    msg := "A_ScreenWidth=" A_ScreenWidth "`nA_ScreenHeight=" A_ScreenHeight
-    . "`nA_ScreenDPI=" A_ScreenDPI
-    . "`nGuiScale=" ((A_ScreenDPI > 0) ? (A_ScreenDPI / 96.0) : 1.0)
-    . "`nMonCount=" monCount
-    . "`nVirtualScreen x=" vx " y=" vy " w=" vw " h=" vh
-    MsgBox, 64, Clickey Debug, %msg%
-}
-
 Clickey_HideOverlay() {
-    ; 销毁遮罩
     global g_guiName, g_hwnd
     Gui, %g_guiName%:Destroy
     g_hwnd := 0
 }
 
 Clickey_AddLine(x, y, w, h) {
-    ; 用 Progress 画线，支持自定义颜色
     global g_guiName, g_lineColor
     Gui, %g_guiName%:Add, Progress, % "x" x " y" y " w" w " h" h " c" g_lineColor " Background" g_lineColor, 100
 }
+
+
 
 Clickey_DrawDiagonals(x1, y1, x2, y2) {
     global g_hwnd, g_lineColor, g_line, g_guiScale
@@ -322,11 +356,7 @@ Clickey_ColorToBGR(hex) {
 
 Clickey_SetLayoutForStep(stepIndex) {
     global g_rows, g_cols, g_keys, g_keyMap, g_font_size, g_stage
-    global g_layers, g_layerCount, g_selectedRowKey, g_rowKeyMap, g_colKeyMap, g_steps
-    totalSteps := g_steps.Length()
-    if (stepIndex < 1 || stepIndex > totalSteps)
-        return
-
+    global g_layers, g_selectedRowKey, g_rowKeyMap, g_colKeyMap, g_steps
     stepDef := g_steps[stepIndex]
     layer := g_layers[stepDef.layerIndex]
     g_font_size := layer.font
@@ -336,63 +366,65 @@ Clickey_SetLayoutForStep(stepIndex) {
         g_colKeyMap := layer.colMap
         if (stepDef.stage = 0) {
             g_stage := 0
-            g_rows := 9
-            g_cols := 9
+            g_rows := layer.rowKeys.Length()
+            g_cols := layer.colKeys.Length()
             g_keys := Clickey_BuildComboLabels(layer.rowKeys, layer.colKeys)
-            g_keyMap := g_rowKeyMap
+            g_keyMap := g_colKeyMap
         } else {
             g_stage := 1
-            g_rows := 3
-            g_cols := 3
-            g_keys := Clickey_BuildRowLabels(g_selectedRowKey, layer.colKeys)
-            g_keyMap := g_colKeyMap
+            g_rows := layer.rowKeys.Length()
+            g_cols := 1
+            g_keys := layer.rowKeys
+            g_keyMap := g_rowKeyMap
         }
     } else {
         g_stage := 2
-        g_rows := 3
-        g_cols := 3
+        g_rows := layer.rows
+        g_cols := layer.cols
         g_keys := layer.keys
         g_keyMap := layer.map
     }
 }
 
 Clickey_Init() {
-    global g_keys, g_keyMap, g_guiScale, g_line, g_rows, g_cols
-    global g_layers, g_layerCount, g_font_size
+    global g_layers, g_layerCount, g_guiScale, g_fontScale
 
-    ; 行键/列键（各9键，行优先）
-    keys1 := ["w","e","r"
-    ,"s","d","f"
-    ,"x","c","v"]
-    keys2 := ["u","i","o"
-    ,"j","k","l"
-    ,"m",",","."]
+    rowKeys := ["y","h","n","u","j"
+    ,"m","i","k",",","o","l",".","p",";","/"]
 
-    ; DPI缩放系数
-    g_guiScale := (A_ScreenDPI > 0) ? (A_ScreenDPI / 96.0) : 1.0
+    colKeys := ["q","a","z","w","s","x","e","d","c","r"
+    ,"f","v","t","g","b"]
+
+    singleRows := []
+    singleRows.Push(["q","w","e","r","t"])
+    singleRows.Push(["a","s","d","f","g"])
+    singleRows.Push(["z","x","c","v","b"])
+
+    singleKeys := Clickey_FlattenRows(singleRows)
+
+    ; Geometry should be in raw pixels to avoid per-monitor DPI offset issues.
+    g_guiScale := 1.0
+    g_fontScale := (A_ScreenDPI > 0) ? (A_ScreenDPI / 96.0) : 1.0
     if (g_line <= 0)
-        g_line := (g_guiScale >= 1.5) ? 2 : 1
+        g_line := (g_fontScale >= 1.5) ? 2 : 1
 
-    ; 字号按DPI缩放（9x9 更小一些）
-    font_combo := Round(12 * g_guiScale)
-    font_main := Round(8 * g_guiScale)
-    font_small := Round(4 * g_guiScale)
+    font_combo := Round(6 * g_fontScale)
+    font_single := Round(4 * g_fontScale)
 
     g_layers := []
-    layer1 := {mode: "combo", rowKeys: keys1, colKeys: keys2, font: font_combo}
+    layer1 := {mode: "combo", rowKeys: rowKeys, colKeys: colKeys, font: font_combo}
     layer1.rowMap := Clickey_BuildKeyMap(layer1.rowKeys)
     layer1.colMap := Clickey_BuildKeyMap(layer1.colKeys)
     g_layers.Push(layer1)
-    layer2 := {mode: "single", keys: keys1, font: font_main}
-    layer2.map := Clickey_BuildKeyMap(layer2.keys)
+
+    layer2 := {mode: "single", keys: singleKeys, font: font_single}
+    layer2.rows := singleRows.Length()
+    layer2.cols := singleRows[1].Length()
+    layer2.map := Clickey_BuildKeyMap(singleKeys)
     g_layers.Push(layer2)
-    layer3 := {mode: "single", keys: keys2, font: font_small}
-    layer3.map := Clickey_BuildKeyMap(layer3.keys)
-    g_layers.Push(layer3)
+
     g_layerCount := g_layers.Length()
     Clickey_BuildSteps()
-
-    g_font_size := g_layers[1].font
     Clickey_SetLayoutForStep(1)
     Clickey_UpdateScreen()
 }
@@ -419,20 +451,9 @@ Clickey_BuildSteps() {
 
 Clickey_BuildComboLabels(rowKeys, colKeys) {
     labels := []
-    Loop, 3 {
-        rowGroup := A_Index - 1
-        Loop, 3 {
-            colGroup := A_Index - 1
-            Loop, 3 {
-                rowPos := A_Index - 1
-                rk := rowKeys[rowGroup * 3 + rowPos + 1]
-                Loop, 3 {
-                    colPos := A_Index - 1
-                    ck := colKeys[colGroup * 3 + colPos + 1]
-                    labels.Push(rk . ck)
-                }
-            }
-        }
+    for _, rk in rowKeys {
+        for _, ck in colKeys
+            labels.Push(ck . rk)
     }
     return labels
 }
@@ -444,22 +465,27 @@ Clickey_BuildRowLabels(prefix, colKeys) {
     return labels
 }
 
+Clickey_FlattenRows(rows) {
+    keys := []
+    for _, row in rows {
+        for _, k in row
+            keys.Push(k)
+    }
+    return keys
+}
+
 Clickey_UpdateScreen() {
-    global g_screen
-    ; 单显示器：直接用 A_ScreenWidth/Height
+    global g_screen, g_monitorIndex
     SysGet, monCount, MonitorCount
     if (monCount <= 1) {
         g_screen := {x: 0, y: 0, w: A_ScreenWidth, h: A_ScreenHeight}
         return
     }
+    if (g_monitorIndex < 1)
+        g_monitorIndex := 1
+    if (g_monitorIndex > monCount)
+        g_monitorIndex := monCount
 
-    SysGet, vx, 76
-    SysGet, vy, 77
-    SysGet, vw, 78
-    SysGet, vh, 79
-
-    if (vw = "")
-        g_screen := {x: 0, y: 0, w: A_ScreenWidth, h: A_ScreenHeight}
-    else
-        g_screen := {x: vx, y: vy, w: vw, h: vh}
+    SysGet, mon, Monitor, %g_monitorIndex%
+    g_screen := {x: monLeft, y: monTop, w: monRight - monLeft, h: monBottom - monTop}
 }

@@ -20,23 +20,30 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 ## 1. 现状与原型真相（不要凭空改交互）
 
-当前行为基准来自两份 AutoHotkey v1 原型脚本（它们是事实标准）：
+当前行为基准来自 `demo/` 下的版本化 AutoHotkey v1 原型脚本（它们是事实标准）：
 
-- `clickey.ahk`：3x3 方案（多层、键位少）
-- `clickeyy.ahk`：5x5 方案（层数少、定位更细）
+- `demo/clickey_v1.0.ahk`：原 `clickey.ahk`，3x3 方案（多层、键位少）
+- `demo/clickey_v1.1.ahk`：原 `clickeyy.ahk`，5x5 方案（层数少、定位更细）
+- `demo/clickey_v2.x.ahk` / `demo/clickey_v3.x.ahk`：后续迭代
+- **当前基准**：`demo/clickey_v3.1.ahk`（后续工作以此为准）
 
-### 1.1 通用交互（两套原型一致）
+完整版本说明见 `demo/clickey.md`。
+
+### 1.1 通用交互（以 v3.1 为准）
 
 - 激活：`Ctrl+;`（左键） / `Ctrl+Shift+;`（右键） / `Ctrl+Shift+Alt+;`（中键）
 - 取消：`Esc`（直接退出，不点击）
 - 回退：`Backspace`（撤销最近一次按键，恢复上一次 Region）
 - 直达：`Space`（直接点击当前 Region 中心点，跳过后续层级）
+- 切换显示器：`Tab`（多屏时）
+- 单键层微调：方向键（`Up/Down/Left/Right`，5px 步长，仅单键层）
 
 ### 1.2 坐标系与多显示器
 
-- 初始 Region 取“虚拟屏幕”（Windows 下 `SysGet` 76~79 对应 VirtualScreen 的 x/y/w/h）。
+- v3.1 初始 Region 取当前显示器（`Monitor` 信息），多屏可用 `Tab` 轮换。
+- v1.x 使用 VirtualScreen（`SysGet` 76~79）作为初始 Region（历史参考）。
 - 所有裁剪都发生在“屏幕像素坐标”的 Region 上。
-- 遮罩绘制时会考虑 DPI 缩放（原型用 `A_ScreenDPI / 96` 作为 scale，绘制时做换算）。
+- v3.1 的几何按原始像素绘制，字体按 DPI 缩放，减少多屏 DPI 偏移。
 
 > 智能体在重写/抽取算法时：**计算逻辑与渲染逻辑必须拆开**。核心引擎只在像素坐标里做 Region 变换；渲染层自行处理 DPI 与窗口坐标换算。
 
@@ -115,7 +122,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - **Step**：一次按键输入（会把 Region 收缩一次）
 - **Mode**
   - `single`：一次按键对应一个 `rows x cols` 网格裁剪
-  - `combo`：两段式（先选“行键/块”，再选“列键/格”），本质仍是两次裁剪
+  - `combo`：两段式（先选一维，再选另一维），本质仍是两次裁剪
 - **Stage（仅 combo）**
   - Stage 0：选择“块”（第一步）
   - Stage 1：选择“块内格”（第二步）
@@ -149,7 +156,40 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - `centerX = round(x + width / 2)`
 - `centerY = round(y + height / 2)`
 
-### 5.2 3x3 原型的“分层步骤表”（事实标准）
+### 5.2 v3.1 基准的“分层步骤表”（当前事实标准）
+
+键位（固定顺序先列后行）：
+
+列键（15）：
+
+- `q a z w s`
+- `x e d c r`
+- `f v t g b`
+
+行键（15）：
+
+- `y h n u j`
+- `m i k , o`
+- `l . p ; /`
+
+单键层 3x5：
+
+- `q w e r t`
+- `a s d f g`
+- `z x c v b`
+
+步骤（共 3 次按键）：
+
+1. combo stage 0：用“列键”选列（裁剪一次）
+2. combo stage 1：用“行键”选行（裁剪一次）
+3. single：用单键层 3x5（裁剪一次）
+
+补充：
+
+- 仅单键层支持方向键 5px 微调。
+- 多显示器可用 `Tab` 切换当前屏幕。
+
+### 5.3 v1.0（原 `clickey.ahk` → `demo/clickey_v1.0.ahk`）的“分层步骤表”（历史）
 
 键位：
 
@@ -163,9 +203,9 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 3. single：用行键 3x3（裁剪一次）
 4. single：用列键 3x3（裁剪一次）
 
-> 注意：原型在 combo stage 0 时，输入允许的是“行键集合”；combo stage 1 时允许的是“列键集合”。
+> 注意：v1.0 在 combo stage 0 时，输入允许的是“行键集合”；combo stage 1 时允许的是“列键集合”。
 
-### 5.3 5x5 原型的“分层步骤表”（事实标准）
+### 5.4 v1.1（原 `clickeyy.ahk` → `demo/clickey_v1.1.ahk`）的“分层步骤表”（历史）
 
 键位 5x5：
 `q w e r t / y u i o p / a s d f g / h j k l ; / z x c v b`
@@ -399,7 +439,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 - E1 初始化 Tauri + Svelte + TS 工程骨架（空壳可跑）
 - E3 遮罩窗口 PoC（透明/置顶/click-through/不抢焦点）
-- AHK 行为原型（3x3 / 5x5）可运行
+- AHK 行为原型可运行（版本化；基准 v3.1）
 - 仓库文档收敛为 `README.md` + `AGENT.md`
 
 ---
@@ -421,3 +461,4 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 - 2026-02-10：将文档收敛为两份：`README.md`（人类）与 `AGENT.md`（智能体）。
 - 2026-02-10: Initialized Tauri v2 + Svelte/TS skeleton; tray menu, overlay PoC, core engine unit test.
+- 2026-02-17：AHK 原型版本化（v1.0/v1.1 对应原脚本），基准更新为 `demo/clickey_v3.1.ahk`，文档同步。

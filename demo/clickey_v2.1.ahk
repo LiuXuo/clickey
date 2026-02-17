@@ -6,54 +6,54 @@ ListLines, Off
 CoordMode, Mouse, Screen
 
 ; ========================== 说明 ==========================
-; 1) 改造为 5x5 结构：
-;    双键层（合并）：25x25 区域，由 5x5 个大块组成，每块内部又是 5x5
-;    单键层：5x5 精细定位
-; 2) 按键：
-;    q w e r t
-;    y u i o p
-;    a s d f g
-;    h j k l ;
-;    z x c v b
-; 3) 交互：Ctrl+; 左键 / Ctrl+Shift+; 右键 / Ctrl+Shift+Alt+; 中键
-; 4) 功能：Esc 取消；Backspace 回退；Space 直接点击中心
-; ========================== 运行状态 ==========================
-global g_active := false 
-global g_button := ""
-global g_step := 0 
-global g_stage := 0 ; 0=行键块 1=列键格 2=单键层
-global g_screen := {} 
-global g_region := {} 
-global g_keys := [] 
-global g_keyMap := {} 
-global g_selectedRowKey := "" 
-global g_layers := [] 
-global g_layerCount := 0
-global g_steps := [] 
-global g_stepHistory := [] 
+; 1) 2 层结构：
+;    第 1 层：双键（行键 30 + 列键 30 组合，30x30）
+;    第 2 层：单键（3 行 x 5 列）
+; 2) 行键：q a z w s x e d c r f v t g b y h n u j m i k , o l . p ; /
+;    列键：q a z w s x e d c r f v t g b y h n u j m i k , o l . p ; /
+; 3) 单键层：qwert / asdfg / zxcvb
+; 4) 按键：Ctrl+; 左键 / Ctrl+Shift+; 右键 / Ctrl+Shift+Alt+; 中键
+; 5) 交互：Esc 取消；Backspace 回退；Space 直接点击当前区域中心点
 
-; ========================== 外观配置 (完全还原原始样式) ==========================
-global g_alpha := 120 
-global g_maskColor := "000000" 
-global g_lineColor := "FFFFFF" 
-global g_textColor := "FFFFFF" 
-global g_guiName := "Clickey5x5"
+; ========================== 运行状态 ==========================
+global g_active := false
+global g_button := ""
+global g_step := 0
+global g_stage := 0 ; 0=行键 1=列键 2=单键
+global g_screen := {}
+global g_region := {}
+global g_keys := []
+global g_keyMap := {}
+global g_rowKeyMap := {}
+global g_colKeyMap := {}
+global g_selectedRowKey := ""
+global g_layers := []
+global g_layerCount := 0
+global g_steps := []
+global g_stepHistory := []
+
+; ========================== 外观配置 ==========================
+global g_alpha := 120
+global g_maskColor := "000000"
+global g_lineColor := "FFFFFF"
+global g_textColor := "FFFFFF"
+global g_guiName := "Clickey30x10"
 global g_hwnd := 0
-global g_guiScale := 1.0 
-global g_line := 1 
-global g_rows := 25 ; 第一阶段 25x25
-global g_cols := 25 
-global g_font_size := 8 
+global g_guiScale := 1.0
+global g_line := 1
+global g_rows := 30
+global g_cols := 10
+global g_font_size := 8
 
 Clickey_Init()
 return
 
-^;::Clickey_Start("Left")            
-^+;::Clickey_Start("Right")          
-^+!;::Clickey_Start("Middle")        
+^;::Clickey_Start("Left")
+^+;::Clickey_Start("Right")
+^+!;::Clickey_Start("Middle")
 
 Clickey_Start(button) {
-    global g_active, g_button, g_step, g_region, g_screen, g_layerCount, g_steps
+    global g_active, g_button, g_step, g_region, g_screen, g_steps
     global g_selectedRowKey, g_stepHistory
     if (g_active)
         return
@@ -70,7 +70,7 @@ Clickey_Start(button) {
     KeyWait, Alt
     Sleep, 30
 
-    g_stepHistory := [] 
+    g_stepHistory := []
     totalSteps := g_steps.Length()
     stepIndex := 1
     while (stepIndex <= totalSteps) {
@@ -102,6 +102,7 @@ Clickey_Start(button) {
             g_active := false
             return
         }
+
         stepDef := g_steps[stepIndex]
         g_stepHistory.Push({step: stepIndex, x: g_region.x, y: g_region.y, w: g_region.w, h: g_region.h, rowKey: g_selectedRowKey})
 
@@ -137,17 +138,30 @@ Clickey_ReadKey() {
 }
 
 Clickey_ApplyKey(key) {
-    global g_region, g_stage, g_keyMap, g_rows, g_cols
-    idx := g_keyMap[key]
-    row := Ceil(idx / 5)
-    col := Mod(idx - 1, 5) + 1
-
-    cellW := g_region.w / 5
-    cellH := g_region.h / 5
-    g_region.x := g_region.x + (col - 1) * cellW
-    g_region.y := g_region.y + (row - 1) * cellH
-    g_region.w := cellW
-    g_region.h := cellH
+    global g_region, g_stage, g_rowKeyMap, g_colKeyMap, g_keyMap, g_rows, g_cols
+    if (g_stage = 0) {
+        idx := g_colKeyMap[key]
+        col := idx
+        cellW := g_region.w / g_cols
+        g_region.x := g_region.x + (col - 1) * cellW
+        g_region.w := cellW
+    } else if (g_stage = 1) {
+        idx := g_rowKeyMap[key]
+        row := idx
+        cellH := g_region.h / g_rows
+        g_region.y := g_region.y + (row - 1) * cellH
+        g_region.h := cellH
+    } else {
+        idx := g_keyMap[key]
+        row := Ceil(idx / g_cols)
+        col := Mod(idx - 1, g_cols) + 1
+        cellW := g_region.w / g_cols
+        cellH := g_region.h / g_rows
+        g_region.x := g_region.x + (col - 1) * cellW
+        g_region.y := g_region.y + (row - 1) * cellH
+        g_region.w := cellW
+        g_region.h := cellH
+    }
 }
 
 Clickey_DoClick() {
@@ -172,8 +186,8 @@ Clickey_ShowOverlay() {
     stepIndex := g_step + 1
     stepDef := g_steps[stepIndex]
     layerIndex := stepDef.layerIndex
-    msg := "层 " layerIndex "/" g_layerCount " (Esc取消 / Backspace回退 / Space点击)"
-    Gui, %g_guiName%:Add, Text, x10 y10 w400 h24 +BackgroundTrans, %msg%
+    msg := "层 " layerIndex "/" g_layerCount " 键 " stepDef.stepInLayer "/" stepDef.stepsInLayer " (Esc取消 / Backspace回退 / Space点击)"
+    Gui, %g_guiName%:Add, Text, x10 y10 w420 h24 +BackgroundTrans, %msg%
 
     scale := (g_guiScale > 0) ? g_guiScale : 1.0
     ox := Round((g_region.x - g_screen.x) / scale)
@@ -191,7 +205,6 @@ Clickey_ShowOverlay() {
     sh := Round(g_screen.h / scale)
     line := g_line
 
-    ; 绘制网格线
     Clickey_AddLine(ox, oy, rw, line)
     Clickey_AddLine(ox, oy, line, rh)
     Clickey_AddLine(ox, oy2, rw, line)
@@ -206,7 +219,6 @@ Clickey_ShowOverlay() {
         Clickey_AddLine(ox, ly, rw, line)
     }
 
-    ; 绘制标签
     Loop, %g_rows% {
         row := A_Index
         Loop, %g_cols% {
@@ -228,8 +240,9 @@ Clickey_ShowOverlay() {
 }
 
 Clickey_HideOverlay() {
-    global g_guiName
+    global g_guiName, g_hwnd
     Gui, %g_guiName%:Destroy
+    g_hwnd := 0
 }
 
 Clickey_AddLine(x, y, w, h) {
@@ -243,16 +256,24 @@ Clickey_DrawDiagonals(x1, y1, x2, y2) {
         return
     scale := (g_guiScale > 0) ? g_guiScale : 1.0
     if (scale != 1.0) {
-        x1 := Round(x1 * scale), y1 := Round(y1 * scale), x2 := Round(x2 * scale), y2 := Round(y2 * scale)
+        x1 := Round(x1 * scale)
+        y1 := Round(y1 * scale)
+        x2 := Round(x2 * scale)
+        y2 := Round(y2 * scale)
     }
     hdc := DllCall("GetDC", "ptr", g_hwnd, "ptr")
+    if (!hdc)
+        return
     color := Clickey_ColorToBGR(g_lineColor)
-    hPen := DllCall("gdi32.dll\CreatePen", "int", 0, "int", g_line, "uint", color, "ptr")
+    penWidth := (scale != 1.0) ? Round(g_line * scale) : g_line
+    hPen := DllCall("gdi32.dll\CreatePen", "int", 0, "int", penWidth, "uint", color, "ptr")
     oldPen := DllCall("gdi32.dll\SelectObject", "ptr", hdc, "ptr", hPen, "ptr")
+
     DllCall("gdi32.dll\MoveToEx", "ptr", hdc, "int", x1, "int", y1, "ptr", 0)
     DllCall("gdi32.dll\LineTo", "ptr", hdc, "int", x2, "int", y2)
     DllCall("gdi32.dll\MoveToEx", "ptr", hdc, "int", x2, "int", y1, "ptr", 0)
     DllCall("gdi32.dll\LineTo", "ptr", hdc, "int", x1, "int", y2)
+
     DllCall("gdi32.dll\SelectObject", "ptr", hdc, "ptr", oldPen)
     DllCall("gdi32.dll\DeleteObject", "ptr", hPen)
     DllCall("ReleaseDC", "ptr", g_hwnd, "ptr", hdc)
@@ -261,57 +282,81 @@ Clickey_DrawDiagonals(x1, y1, x2, y2) {
 Clickey_ColorToBGR(hex) {
     if (SubStr(hex, 1, 2) = "0x")
         hex := SubStr(hex, 3)
-    return "0x" . SubStr(hex, 5, 2) . SubStr(hex, 3, 2) . SubStr(hex, 1, 2)
+    if (StrLen(hex) != 6)
+        return hex
+    r := SubStr(hex, 1, 2)
+    g := SubStr(hex, 3, 2)
+    b := SubStr(hex, 5, 2)
+    return "0x" . b . g . r
 }
 
 Clickey_SetLayoutForStep(stepIndex) {
     global g_rows, g_cols, g_keys, g_keyMap, g_font_size, g_stage
-    global g_layers, g_selectedRowKey, g_steps
+    global g_layers, g_selectedRowKey, g_rowKeyMap, g_colKeyMap, g_steps
     stepDef := g_steps[stepIndex]
     layer := g_layers[stepDef.layerIndex]
     g_font_size := layer.font
 
     if (stepDef.mode = "combo") {
+        g_rowKeyMap := layer.rowMap
+        g_colKeyMap := layer.colMap
         if (stepDef.stage = 0) {
             g_stage := 0
-            g_rows := 25, g_cols := 25
-            g_keys := Clickey_BuildComboLabels(layer.rawKeys, layer.rawKeys)
-            g_keyMap := layer.map
+            g_rows := layer.rowKeys.Length()
+            g_cols := layer.colKeys.Length()
+            g_keys := Clickey_BuildComboLabels(layer.rowKeys, layer.colKeys)
+            g_keyMap := g_colKeyMap
         } else {
             g_stage := 1
-            g_rows := 5, g_cols := 5
-            g_keys := Clickey_BuildRowLabels(g_selectedRowKey, layer.rawKeys)
-            g_keyMap := layer.map
+            g_rows := layer.rowKeys.Length()
+            g_cols := 1
+            g_keys := layer.rowKeys
+            g_keyMap := g_rowKeyMap
         }
     } else {
         g_stage := 2
-        g_rows := 5, g_cols := 5
-        g_keys := layer.rawKeys
+        g_rows := layer.rows
+        g_cols := layer.cols
+        g_keys := layer.keys
         g_keyMap := layer.map
     }
 }
 
 Clickey_Init() {
-    global g_layers, g_layerCount, g_guiScale, g_font_size
+    global g_layers, g_layerCount, g_guiScale
 
-    ; 你的 5x5 按键定义
-    keys := ["q","w","e","r","t"
-    ,"y","u","i","o","p"
-    ,"a","s","d","f","g"
-    ,"h","j","k","l",";"
-    ,"z","x","c","v","b"]
+    rowKeys := ["q","a","z","w","s","x","e","d","c","r"
+    ,"f","v","t","g","b","y","h","n","u","j"
+    ,"m","i","k",",","o","l",".","p",";","/"]
+
+    colKeys := ["q","a","z","w","s","x","e","d","c","r"
+    ,"f","v","t","g","b","y","h","n","u","j"
+    ,"m","i","k",",","o","l",".","p",";","/"]
+
+    singleRows := []
+    singleRows.Push(["q","w","e","r","t"])
+    singleRows.Push(["a","s","d","f","g"])
+    singleRows.Push(["z","x","c","v","b"])
+
+    singleKeys := Clickey_FlattenRows(singleRows)
 
     g_guiScale := (A_ScreenDPI > 0) ? (A_ScreenDPI / 96.0) : 1.0
+    if (g_line <= 0)
+        g_line := (g_guiScale >= 1.5) ? 2 : 1
+
+    font_combo := Round(6 * g_guiScale)
+    font_single := Round(3 * g_guiScale)
 
     g_layers := []
-    ; 双键层：合并 1+2
-    layer1 := {mode: "combo", rawKeys: keys, font: Round(7 * g_guiScale)}
-    layer1.map := Clickey_BuildKeyMap(keys)
+    layer1 := {mode: "combo", rowKeys: rowKeys, colKeys: colKeys, font: font_combo}
+    layer1.rowMap := Clickey_BuildKeyMap(layer1.rowKeys)
+    layer1.colMap := Clickey_BuildKeyMap(layer1.colKeys)
     g_layers.Push(layer1)
 
-    ; 第三层：单键精细定位
-    layer2 := {mode: "single", rawKeys: keys, font: Round(3 * g_guiScale)}
-    layer2.map := Clickey_BuildKeyMap(keys)
+    layer2 := {mode: "single", keys: singleKeys, font: font_single}
+    layer2.rows := singleRows.Length()
+    layer2.cols := singleRows[1].Length()
+    layer2.map := Clickey_BuildKeyMap(layer2.keys)
     g_layers.Push(layer2)
 
     g_layerCount := g_layers.Length()
@@ -332,40 +377,37 @@ Clickey_BuildSteps() {
     g_steps := []
     for idx, layer in g_layers {
         if (layer.mode = "combo") {
-            g_steps.Push({layerIndex: idx, mode: "combo", stage: 0})
-            g_steps.Push({layerIndex: idx, mode: "combo", stage: 1})
+            g_steps.Push({layerIndex: idx, mode: "combo", stage: 0, stepInLayer: 1, stepsInLayer: 2})
+            g_steps.Push({layerIndex: idx, mode: "combo", stage: 1, stepInLayer: 2, stepsInLayer: 2})
         } else {
-            g_steps.Push({layerIndex: idx, mode: "single", stage: 2})
+            g_steps.Push({layerIndex: idx, mode: "single", stage: 2, stepInLayer: 1, stepsInLayer: 1})
         }
     }
 }
 
-; 生成 25x25 标签矩阵：qq, qw, qe...
 Clickey_BuildComboLabels(rowKeys, colKeys) {
     labels := []
-    Loop, 5 {
-        rGrp := A_Index - 1
-        Loop, 5 {
-            cGrp := A_Index - 1
-            Loop, 5 {
-                rIdx := A_Index - 1
-                rk := rowKeys[rGrp * 5 + rIdx + 1]
-                Loop, 5 {
-                    cIdx := A_Index - 1
-                    ck := colKeys[cGrp * 5 + cIdx + 1]
-                    labels.Push(rk . ck)
-                }
-            }
-        }
+    for _, rk in rowKeys {
+        for _, ck in colKeys
+            labels.Push(ck . rk)
     }
     return labels
 }
 
-Clickey_BuildRowLabels(prefix, keys) {
+Clickey_BuildRowLabels(prefix, colKeys) {
     labels := []
-    for _, k in keys
-        labels.Push(prefix . k)
+    for _, ck in colKeys
+        labels.Push(prefix . ck)
     return labels
+}
+
+Clickey_FlattenRows(rows) {
+    keys := []
+    for _, row in rows {
+        for _, k in row
+            keys.Push(k)
+    }
+    return keys
 }
 
 Clickey_UpdateScreen() {
@@ -373,11 +415,16 @@ Clickey_UpdateScreen() {
     SysGet, monCount, MonitorCount
     if (monCount <= 1) {
         g_screen := {x: 0, y: 0, w: A_ScreenWidth, h: A_ScreenHeight}
-    } else {
-        SysGet, vx, 76
-        SysGet, vy, 77
-        SysGet, vw, 78
-        SysGet, vh, 79
-        g_screen := {x: vx, y: vy, w: vw, h: vh}
+        return
     }
+
+    SysGet, vx, 76
+    SysGet, vy, 77
+    SysGet, vw, 78
+    SysGet, vh, 79
+
+    if (vw = "")
+        g_screen := {x: 0, y: 0, w: A_ScreenWidth, h: A_ScreenHeight}
+    else
+        g_screen := {x: vx, y: vy, w: vw, h: vh}
 }
