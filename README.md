@@ -45,6 +45,26 @@ Clickey 的目标是提供一种高效、精确、可肌肉记忆的鼠标定位
 
 ---
 
+## Settings UI（Tauri 原型）
+
+当前 Settings 窗口已提供表单式配置编辑，可读取/保存配置，重启保留。
+
+可用能力：
+
+- 预设管理：切换 / 复制 / 删除 / 重命名
+- Layer 编辑：增删 / 排序 / mode 切换（single/combo）/ rows/cols/keys 修改 / auto-fit
+- 热键编辑：activation + controls
+- Overlay 样式：alpha/line width/font size + color picker
+
+按钮：
+
+- `Apply`：应用并保存配置
+- `Reset to default`：恢复默认配置
+
+> 当前配置保存在 AppConfig 目录下的 `config.json`，具体路径由系统决定。
+
+---
+
 ## 快捷键（以 v3.1 为准）
 
 不同版本略有差异，以下以 v3.1 为准：

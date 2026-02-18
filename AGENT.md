@@ -70,6 +70,14 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - 职责：配置编辑、预设管理、导入导出、热键冲突提示等。
 - 边界：设置页不持有业务状态机；只读写配置并触发“应用配置”。
 
+当前实现（原型）已具备最小可用的表单化设置能力：
+
+- 预设管理：切换 / 复制 / 删除 / 重命名
+- Layer 编辑：增删 / 排序 / mode 切换（single/combo）/ rows/cols/keys 修改 / auto-fit
+- 热键编辑：activation + controls
+- Overlay 样式：alpha/line width/font size + color picker
+- Apply/Reset：应用并持久化 / 恢复默认配置（写入 AppConfig/config.json）
+
 > 遮罩窗口（Overlay）与设置页（Settings）必须是两套不同的窗口策略：Overlay 必须 click-through/不抢焦点；Settings 必须可交互/可聚焦。
 
 ### 2.3 Native Layer（Rust）
@@ -429,6 +437,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - E3 遮罩窗口 PoC（透明/置顶/click-through/不抢焦点）
 - AHK 行为原型可运行（版本化；基准 v3.1）
 - 仓库文档收敛为 `README.md` + `AGENT.md`
+- Settings UI 原型完成（预设/层/热键/overlay 表单化 + 配置持久化）
 
 ---
 
@@ -454,4 +463,5 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - 2026-02-18：Rust Native PoC 验收通过：全局热键、控制键、鼠标点击、Tab 切屏与 Overlay 位置对齐。
 - 2026-02-18：补齐 Core Engine 状态机规格（输入/输出/状态字段/控制键规则/推进规则）。
 - 2026-02-18：配置模型示例更新为 v3.1 默认预设，与当前基准保持一致。
+- 2026-02-18：Settings UI 原型完成（预设/层/热键/overlay 表单化，支持增删排序、mode 切换、auto-fit、颜色拾取）；配置持久化链路就绪（get/apply/reset，写入 AppConfig/config.json）。
 

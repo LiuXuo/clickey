@@ -5,6 +5,8 @@ use enigo::{Enigo, MouseButton, MouseControllable};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
+    fs,
+    path::PathBuf,
     sync::Mutex,
 };
 use tauri::{menu::Menu, menu::MenuItem, tray::TrayIconBuilder};
@@ -94,14 +96,52 @@ struct AppState {
     monitor_index: Mutex<usize>,
 }
 
-#[tauri::command]
-fn apply_config(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    config: AppConfig,
-) -> Result<(), String> {
-    println!("[config] apply_config called");
-    let activation_ids = ActivationHotkeyIds::from_config(&config);
+const CONFIG_FILE_NAME: &str = "config.json";
+
+fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|dir| dir.join(CONFIG_FILE_NAME))
+        .map_err(|_| "unable to resolve app config directory".to_string())
+}
+
+fn load_config(app: &AppHandle) -> (AppConfig, bool) {
+    let path = match config_path(app) {
+        Ok(path) => path,
+        Err(err) => {
+            println!("[config] failed to resolve path: {}", err);
+            return (default_config(), true);
+        }
+    };
+
+    match fs::read_to_string(&path) {
+        Ok(contents) => match serde_json::from_str::<AppConfig>(&contents) {
+            Ok(config) => match validate_config(&config) {
+                Ok(()) => (config, false),
+                Err(err) => {
+                    println!("[config] invalid config file, using default: {}", err);
+                    (default_config(), true)
+                }
+            },
+            Err(err) => {
+                println!("[config] invalid config file, using default: {}", err);
+                (default_config(), true)
+            }
+        },
+        Err(_) => (default_config(), true),
+    }
+}
+
+fn persist_config(app: &AppHandle, config: &AppConfig) -> Result<(), String> {
+    let path = config_path(app)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let payload = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
+    fs::write(&path, payload).map_err(|e| e.to_string())
+}
+
+fn set_state_config(state: &AppState, config: AppConfig) -> Result<(), String> {
     {
         let mut config_guard = state.config.lock().map_err(|_| "config lock poisoned")?;
         *config_guard = config.clone();
@@ -111,9 +151,146 @@ fn apply_config(
             .activation_ids
             .lock()
             .map_err(|_| "activation ids lock poisoned")?;
-        *ids_guard = activation_ids;
+        *ids_guard = ActivationHotkeyIds::from_config(&config);
+    }
+    Ok(())
+}
+
+fn get_state_config(state: &AppState) -> Result<AppConfig, String> {
+    state
+        .config
+        .lock()
+        .map(|guard| guard.clone())
+        .map_err(|_| "config lock poisoned".to_string())
+}
+
+fn validate_keys(keys: &[String], expected_len: usize, label: &str) -> Result<(), String> {
+    if keys.len() != expected_len {
+        return Err(format!(
+            "{} expects {} keys but got {}",
+            label,
+            expected_len,
+            keys.len()
+        ));
+    }
+    if keys.iter().any(|key| key.trim().is_empty()) {
+        return Err(format!("{} contains empty key labels", label));
+    }
+    Ok(())
+}
+
+fn validate_hotkey(value: &str, label: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err(format!("{} hotkey is empty", label));
+    }
+    parse_shortcut(value)
+        .map(|_| ())
+        .ok_or_else(|| format!("{} hotkey is invalid: {}", label, value))
+}
+
+fn validate_config(config: &AppConfig) -> Result<(), String> {
+    if config.presets.is_empty() {
+        return Err("presets must not be empty".to_string());
     }
 
+    validate_hotkey(&config.hotkeys.activation.left_click, "leftClick")?;
+    validate_hotkey(&config.hotkeys.activation.right_click, "rightClick")?;
+    validate_hotkey(&config.hotkeys.activation.middle_click, "middleClick")?;
+
+    if config.hotkeys.controls.cancel.trim().is_empty() {
+        return Err("cancel hotkey is empty".to_string());
+    }
+    if config.hotkeys.controls.undo.trim().is_empty() {
+        return Err("undo hotkey is empty".to_string());
+    }
+    if config.hotkeys.controls.direct_click.trim().is_empty() {
+        return Err("directClick hotkey is empty".to_string());
+    }
+
+    if config.overlay.line_width_px == 0 {
+        return Err("overlay lineWidthPx must be > 0".to_string());
+    }
+    if config.overlay.font.size_px == 0 {
+        return Err("overlay font sizePx must be > 0".to_string());
+    }
+
+    let mut preset_ids = HashSet::new();
+    for preset in &config.presets {
+        if preset.id.trim().is_empty() {
+            return Err("preset id must not be empty".to_string());
+        }
+        if !preset_ids.insert(preset.id.as_str()) {
+            return Err(format!("duplicate preset id: {}", preset.id));
+        }
+        if preset.layers.is_empty() {
+            return Err(format!("preset {} has no layers", preset.id));
+        }
+
+        for (layer_index, layer) in preset.layers.iter().enumerate() {
+            match layer {
+                Layer::Single { rows, cols, keys } => {
+                    if *rows == 0 || *cols == 0 {
+                        return Err(format!(
+                            "preset {} layer {} has invalid grid size",
+                            preset.id, layer_index
+                        ));
+                    }
+                    let expected_len = (*rows as usize) * (*cols as usize);
+                    validate_keys(
+                        keys,
+                        expected_len,
+                        &format!("preset {} layer {}", preset.id, layer_index),
+                    )?;
+                }
+                Layer::Combo { stage0, stage1 } => {
+                    if stage0.rows == 0 || stage0.cols == 0 {
+                        return Err(format!(
+                            "preset {} layer {} stage0 has invalid grid size",
+                            preset.id, layer_index
+                        ));
+                    }
+                    if stage1.rows == 0 || stage1.cols == 0 {
+                        return Err(format!(
+                            "preset {} layer {} stage1 has invalid grid size",
+                            preset.id, layer_index
+                        ));
+                    }
+                    let expected0 = (stage0.rows as usize) * (stage0.cols as usize);
+                    validate_keys(
+                        &stage0.keys,
+                        expected0,
+                        &format!("preset {} layer {} stage0", preset.id, layer_index),
+                    )?;
+                    let expected1 = (stage1.rows as usize) * (stage1.cols as usize);
+                    validate_keys(
+                        &stage1.keys,
+                        expected1,
+                        &format!("preset {} layer {} stage1", preset.id, layer_index),
+                    )?;
+                }
+            }
+        }
+    }
+
+    if !preset_ids.contains(config.active_preset_id.as_str()) {
+        return Err(format!(
+            "activePresetId {} does not match any preset",
+            config.active_preset_id
+        ));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn apply_config(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: AppConfig,
+) -> Result<(), String> {
+    println!("[config] apply_config called");
+    validate_config(&config)?;
+    set_state_config(state.inner(), config.clone())?;
     register_activation_hotkeys(&app, state.inner(), &config)?;
     let overlay_active = state
         .overlay_active
@@ -123,7 +300,30 @@ fn apply_config(
     if overlay_active {
         register_overlay_hotkeys(&app, state.inner(), &config)?;
     }
+    persist_config(&app, &config)?;
     Ok(())
+}
+
+#[tauri::command]
+fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
+    get_state_config(state.inner())
+}
+
+#[tauri::command]
+fn reset_config(app: AppHandle, state: State<'_, AppState>) -> Result<AppConfig, String> {
+    let config = default_config();
+    set_state_config(state.inner(), config.clone())?;
+    register_activation_hotkeys(&app, state.inner(), &config)?;
+    let overlay_active = state
+        .overlay_active
+        .lock()
+        .map(|guard| *guard)
+        .unwrap_or(false);
+    if overlay_active {
+        register_overlay_hotkeys(&app, state.inner(), &config)?;
+    }
+    persist_config(&app, &config)?;
+    Ok(config)
 }
 
 #[tauri::command]
@@ -226,6 +426,8 @@ pub fn run() {
         .plugin(global_shortcut_plugin)
         .invoke_handler(tauri::generate_handler![
             apply_config,
+            get_config,
+            reset_config,
             native_click,
             close_overlay
         ])
@@ -233,13 +435,28 @@ pub fn run() {
             let handle = app.handle();
             create_overlay_window(&handle)?;
             register_tray(&handle)?;
-            let config = app
-                .state::<AppState>()
-                .config
-                .lock()
-                .map(|guard| guard.clone())
-                .unwrap_or_else(|_| default_config());
-            register_activation_hotkeys(&handle, app.state::<AppState>().inner(), &config)?;
+            let state = app.state::<AppState>();
+            let (mut config, mut should_persist) = load_config(&handle);
+            if let Err(err) = set_state_config(state.inner(), config.clone()) {
+                println!("[config] failed to set state config: {}", err);
+                config = default_config();
+                let _ = set_state_config(state.inner(), config.clone());
+                should_persist = true;
+            }
+
+            if let Err(err) =
+                register_activation_hotkeys(&handle, app.state::<AppState>().inner(), &config)
+            {
+                println!("[hotkeys] activation register failed: {}", err);
+                let fallback = default_config();
+                let _ = set_state_config(state.inner(), fallback.clone());
+                register_activation_hotkeys(&handle, app.state::<AppState>().inner(), &fallback)?;
+                config = fallback;
+                should_persist = true;
+            }
+            if should_persist {
+                let _ = persist_config(&handle, &config);
+            }
             println!("[startup] activation hotkeys registered");
             Ok(())
         })
