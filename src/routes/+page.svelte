@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
+  import { initLocale, locale, setLocale, t, type Locale } from "$lib/i18n";
   import defaultConfig from "$lib/shared/default-config.json";
   import type { AppConfig, Preset } from "$lib/core";
 
@@ -16,6 +17,8 @@
     "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 disabled:cursor-not-allowed disabled:bg-zinc-100";
   const colorInputClass =
     "h-10 w-12 rounded-md border border-zinc-300 bg-white p-0.5 shadow-sm";
+  const compactSelectClass =
+    "rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 disabled:cursor-not-allowed disabled:bg-zinc-100";
   const keyPool = [
     "q",
     "w",
@@ -68,6 +71,11 @@
     error = "";
   }
 
+  function onLocaleChange(event: Event) {
+    const target = event.currentTarget as HTMLSelectElement;
+    setLocale(target.value as Locale);
+  }
+
   function onPresetChange(event: Event) {
     const target = event.currentTarget as HTMLSelectElement;
     config.activePresetId = target.value;
@@ -106,7 +114,7 @@
     const copy = clonePreset(activePreset);
     const baseId = `${activePreset.id}-copy`;
     copy.id = createUniquePresetId(baseId);
-    copy.name = `${activePreset.name} (copy)`;
+    copy.name = $t("presets.copyName", { name: activePreset.name });
     config.presets = [...config.presets, copy];
     config.activePresetId = copy.id;
     clearFeedback();
@@ -118,11 +126,15 @@
     }
 
     if (config.presets.length <= 1) {
-      error = "At least one preset is required.";
+      error = $t("errors.presetRequired");
       return;
     }
 
-    if (!confirm(`Remove preset "${activePreset.name}"?`)) {
+    if (
+      !confirm(
+        $t("errors.removePresetConfirm", { name: activePreset.name }),
+      )
+    ) {
       return;
     }
 
@@ -315,10 +327,10 @@
     }
     const preset = config.presets[activePresetIndex];
     if (preset.layers.length <= 1) {
-      error = "Preset must have at least one layer.";
+      error = $t("errors.presetLayerRequired");
       return;
     }
-    if (!confirm(`Remove layer ${index + 1}?`)) {
+    if (!confirm($t("errors.removeLayerConfirm", { index: index + 1 }))) {
       return;
     }
     preset.layers = preset.layers.filter((_, layerIndex) => layerIndex !== index);
@@ -458,54 +470,72 @@
     const issues: string[] = [];
 
     if (!candidate.presets.length) {
-      issues.push("Presets list is empty.");
+      issues.push($t("errors.presetsEmpty"));
       return issues;
     }
 
     const presetIds = new Set<string>();
     for (const preset of candidate.presets) {
       if (!preset.id.trim()) {
-        issues.push("Preset id cannot be empty.");
+        issues.push($t("errors.presetIdEmpty"));
       }
       if (!preset.name.trim()) {
-        issues.push("Preset name cannot be empty.");
+        issues.push($t("errors.presetNameEmpty"));
       }
       if (presetIds.has(preset.id)) {
-        issues.push(`Duplicate preset id: ${preset.id}`);
+        issues.push($t("errors.duplicatePresetId", { id: preset.id }));
       }
       presetIds.add(preset.id);
       if (!preset.layers.length) {
-        issues.push(`Preset ${preset.id} has no layers.`);
+        issues.push($t("errors.presetNoLayers", { id: preset.id }));
       }
 
       preset.layers.forEach((layer, index) => {
         if (layer.mode === "single") {
           const expected = layer.rows * layer.cols;
           if (!layer.rows || !layer.cols) {
-            issues.push(`Preset ${preset.id} layer ${index} grid is invalid.`);
+            issues.push(
+              $t("errors.layerGridInvalid", { id: preset.id, index }),
+            );
           }
           if (layer.keys.length !== expected) {
             issues.push(
-              `Preset ${preset.id} layer ${index} expects ${expected} keys.`,
+              $t("errors.layerExpectedKeys", {
+                id: preset.id,
+                index,
+                expected,
+              }),
             );
           }
         } else {
           const expected0 = layer.stage0.rows * layer.stage0.cols;
           const expected1 = layer.stage1.rows * layer.stage1.cols;
           if (!layer.stage0.rows || !layer.stage0.cols) {
-            issues.push(`Preset ${preset.id} layer ${index} stage0 grid invalid.`);
+            issues.push(
+              $t("errors.stage0GridInvalid", { id: preset.id, index }),
+            );
           }
           if (!layer.stage1.rows || !layer.stage1.cols) {
-            issues.push(`Preset ${preset.id} layer ${index} stage1 grid invalid.`);
+            issues.push(
+              $t("errors.stage1GridInvalid", { id: preset.id, index }),
+            );
           }
           if (layer.stage0.keys.length !== expected0) {
             issues.push(
-              `Preset ${preset.id} layer ${index} stage0 expects ${expected0} keys.`,
+              $t("errors.stage0ExpectedKeys", {
+                id: preset.id,
+                index,
+                expected: expected0,
+              }),
             );
           }
           if (layer.stage1.keys.length !== expected1) {
             issues.push(
-              `Preset ${preset.id} layer ${index} stage1 expects ${expected1} keys.`,
+              $t("errors.stage1ExpectedKeys", {
+                id: preset.id,
+                index,
+                expected: expected1,
+              }),
             );
           }
         }
@@ -513,33 +543,33 @@
     }
 
     if (!presetIds.has(candidate.activePresetId)) {
-      issues.push("Active preset is missing.");
+      issues.push($t("errors.activePresetMissing"));
     }
 
     if (!candidate.hotkeys.activation.leftClick.trim()) {
-      issues.push("Left activation hotkey is empty.");
+      issues.push($t("errors.leftHotkeyEmpty"));
     }
     if (!candidate.hotkeys.activation.rightClick.trim()) {
-      issues.push("Right activation hotkey is empty.");
+      issues.push($t("errors.rightHotkeyEmpty"));
     }
     if (!candidate.hotkeys.activation.middleClick.trim()) {
-      issues.push("Middle activation hotkey is empty.");
+      issues.push($t("errors.middleHotkeyEmpty"));
     }
     if (!candidate.hotkeys.controls.cancel.trim()) {
-      issues.push("Cancel hotkey is empty.");
+      issues.push($t("errors.cancelHotkeyEmpty"));
     }
     if (!candidate.hotkeys.controls.undo.trim()) {
-      issues.push("Undo hotkey is empty.");
+      issues.push($t("errors.undoHotkeyEmpty"));
     }
     if (!candidate.hotkeys.controls.directClick.trim()) {
-      issues.push("Direct click hotkey is empty.");
+      issues.push($t("errors.directClickHotkeyEmpty"));
     }
 
     if (candidate.overlay.lineWidthPx <= 0) {
-      issues.push("Overlay lineWidthPx must be > 0.");
+      issues.push($t("errors.overlayLineWidth"));
     }
     if (candidate.overlay.font.sizePx <= 0) {
-      issues.push("Overlay font sizePx must be > 0.");
+      issues.push($t("errors.overlayFontSize"));
     }
 
     return issues;
@@ -556,7 +586,7 @@
     isApplying = true;
     try {
       await invoke("apply_config", { config });
-      status = "Applied";
+      status = $t("status.applied");
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -571,7 +601,7 @@
     try {
       const reset = await invoke<AppConfig>("reset_config");
       config = reset;
-      status = "Reset to default";
+      status = $t("status.reset");
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -580,6 +610,7 @@
   }
 
   onMount(() => {
+    initLocale();
     void (async () => {
       try {
         const loaded = await invoke<AppConfig>("get_config");
@@ -597,19 +628,43 @@
   <div class="mx-auto flex w-full max-w-5xl flex-col gap-8">
     <header class="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p class="text-xs uppercase tracking-[0.35em] text-zinc-500">Settings</p>
+        <p class="text-xs uppercase tracking-[0.35em] text-zinc-500">
+          {$t("app.settings")}
+        </p>
         <h1 class="text-3xl font-semibold tracking-tight text-zinc-900">
-          Clickey
+          {$t("app.brand")}
         </h1>
       </div>
       <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2">
+          <label
+            class="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-500"
+            for="locale-select"
+          >
+            {$t("language.label")}
+          </label>
+          <select
+            id="locale-select"
+            class={compactSelectClass}
+            value={$locale}
+            on:change={onLocaleChange}
+            disabled={isLoading}
+          >
+            <option value="zh-CN">{$t("language.zh")}</option>
+            <option value="en-US">{$t("language.en")}</option>
+          </select>
+        </div>
         <button
           type="button"
           class="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
           on:click={applyConfig}
           disabled={isApplying || isLoading}
         >
-          {isLoading ? "Loading..." : isApplying ? "Applying..." : "Apply"}
+          {isLoading
+            ? $t("app.loading")
+            : isApplying
+              ? $t("app.applying")
+              : $t("app.apply")}
         </button>
         <button
           type="button"
@@ -617,7 +672,7 @@
           on:click={resetConfig}
           disabled={isResetting || isLoading}
         >
-          {isResetting ? "Resetting..." : "Reset to default"}
+          {isResetting ? $t("app.resetting") : $t("app.reset")}
         </button>
       </div>
     </header>
@@ -638,17 +693,21 @@
     >
       <div class="flex items-center justify-between gap-4">
         <div>
-          <p class="text-xs uppercase tracking-[0.28em] text-zinc-500">Presets</p>
-          <h2 class="text-lg font-semibold text-zinc-900">Preset Management</h2>
+          <p class="text-xs uppercase tracking-[0.28em] text-zinc-500">
+            {$t("presets.section")}
+          </p>
+          <h2 class="text-lg font-semibold text-zinc-900">
+            {$t("presets.title")}
+          </h2>
         </div>
-        <p class="text-xs text-zinc-500">Switch, duplicate, rename</p>
+        <p class="text-xs text-zinc-500">{$t("presets.subtitle")}</p>
       </div>
 
       <div class="mt-6 grid gap-6 md:grid-cols-[1.1fr_0.9fr]">
         <div class="space-y-4">
           <div>
             <label class="text-sm font-medium text-zinc-700" for="preset-select">
-              Active Preset
+              {$t("presets.active")}
             </label>
             <select
               id="preset-select"
@@ -665,7 +724,7 @@
 
           <div>
             <label class="text-sm font-medium text-zinc-700" for="preset-name">
-              Preset Name
+              {$t("presets.name")}
             </label>
             <input
               id="preset-name"
@@ -673,10 +732,10 @@
               value={activePreset?.name ?? ""}
               on:input={updateActivePresetName}
               disabled={isLoading || !activePreset}
-              placeholder="Preset name"
+              placeholder={$t("presets.namePlaceholder")}
             />
             <p class="mt-2 text-xs text-zinc-500">
-              Id: {activePreset ? activePreset.id : "-"}
+              {$t("presets.idLabel")}: {activePreset ? activePreset.id : "-"}
             </p>
           </div>
 
@@ -687,7 +746,7 @@
               on:click={duplicateActivePreset}
               disabled={isLoading || !activePreset}
             >
-              Duplicate active
+              {$t("presets.duplicateActive")}
             </button>
             <button
               type="button"
@@ -695,7 +754,7 @@
               on:click={removeActivePreset}
               disabled={isLoading || config.presets.length <= 1}
             >
-              Remove active
+              {$t("presets.removeActive")}
             </button>
           </div>
         </div>
@@ -703,7 +762,7 @@
         <div class="space-y-4">
           <div class="rounded-xl border border-zinc-200 bg-white p-4">
             <p class="text-xs uppercase tracking-[0.28em] text-zinc-500">
-              Preset List
+              {$t("presets.list")}
             </p>
             <div class="mt-3 divide-y divide-zinc-100 text-sm">
               {#each config.presets as preset}
@@ -715,7 +774,7 @@
                     <p class="text-xs text-zinc-400">{preset.id}</p>
                   </div>
                   <span class="text-xs text-zinc-500">
-                    {preset.layers.length} layers
+                    {$t("presets.layersCount", { count: preset.layers.length })}
                   </span>
                 </div>
               {/each}
@@ -724,13 +783,13 @@
 
           <div class="rounded-xl border border-dashed border-zinc-200 p-4">
             <p class="text-xs uppercase tracking-[0.28em] text-zinc-500">
-              Active Summary
+              {$t("presets.activeSummary")}
             </p>
             {#if activePreset}
               <div class="mt-3 space-y-2 text-sm text-zinc-700">
                 {#each activePreset.layers as layer, index}
                   <div class="flex items-center justify-between">
-                    <span>Layer {index + 1}</span>
+                    <span>{$t("layers.layerLabel", { index: index + 1 })}</span>
                     <span class="text-xs text-zinc-500">
                       {layer.mode === "single"
                         ? `${layer.rows}x${layer.cols}`
@@ -740,7 +799,9 @@
                 {/each}
               </div>
             {:else}
-              <p class="mt-3 text-sm text-zinc-500">No active preset.</p>
+              <p class="mt-3 text-sm text-zinc-500">
+                {$t("presets.noActive")}
+              </p>
             {/if}
           </div>
         </div>
@@ -753,9 +814,11 @@
       <div class="flex items-center justify-between gap-4">
         <div>
           <p class="text-xs uppercase tracking-[0.28em] text-zinc-500">
-            Layers
+            {$t("layers.section")}
           </p>
-          <h2 class="text-lg font-semibold text-zinc-900">Layer Editor</h2>
+          <h2 class="text-lg font-semibold text-zinc-900">
+            {$t("layers.title")}
+          </h2>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button
@@ -764,7 +827,7 @@
             on:click={addSingleLayer}
             disabled={isLoading || !activePreset}
           >
-            Add single
+            {$t("layers.addSingle")}
           </button>
           <button
             type="button"
@@ -772,11 +835,11 @@
             on:click={addComboLayer}
             disabled={isLoading || !activePreset}
           >
-            Add combo
+            {$t("layers.addCombo")}
           </button>
         </div>
       </div>
-      <p class="mt-2 text-xs text-zinc-500">Rows, columns, keys</p>
+      <p class="mt-2 text-xs text-zinc-500">{$t("layers.subtitle")}</p>
 
       {#if activePreset}
         <div class="mt-6 space-y-4">
@@ -785,10 +848,12 @@
               <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <p class="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                    Layer {index + 1}
+                    {$t("layers.layerLabel", { index: index + 1 })}
                   </p>
                   <p class="text-sm font-semibold text-zinc-900">
-                    {layer.mode === "single" ? "Single" : "Combo"}
+                    {layer.mode === "single"
+                      ? $t("layers.type.single")
+                      : $t("layers.type.combo")}
                   </p>
                 </div>
                 <div class="min-w-[140px]">
@@ -796,7 +861,7 @@
                     class="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-500"
                     for={`layer-${index}-mode`}
                   >
-                    Mode
+                    {$t("layers.mode")}
                   </label>
                   <select
                     id={`layer-${index}-mode`}
@@ -810,8 +875,8 @@
                       )}
                     disabled={isLoading}
                   >
-                    <option value="single">Single</option>
-                    <option value="combo">Combo</option>
+                    <option value="single">{$t("layers.type.single")}</option>
+                    <option value="combo">{$t("layers.type.combo")}</option>
                   </select>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
@@ -821,7 +886,7 @@
                     on:click={() => moveLayer(index, -1)}
                     disabled={isLoading || index === 0}
                   >
-                    Up
+                    {$t("layers.moveUp")}
                   </button>
                   <button
                     type="button"
@@ -829,7 +894,7 @@
                     on:click={() => moveLayer(index, 1)}
                     disabled={isLoading || index === activePreset.layers.length - 1}
                   >
-                    Down
+                    {$t("layers.moveDown")}
                   </button>
                   <button
                     type="button"
@@ -837,12 +902,12 @@
                     on:click={() => removeLayer(index)}
                     disabled={isLoading || activePreset.layers.length <= 1}
                   >
-                    Remove
+                    {$t("layers.remove")}
                   </button>
                 </div>
               </div>
               <p class="mt-2 text-xs text-zinc-500">
-                Expected keys:
+                {$t("layers.expectedKeys")}
                 {layer.mode === "single"
                   ? ` ${layer.rows * layer.cols}`
                   : ` ${layer.stage0.rows * layer.stage0.cols}`}
@@ -858,7 +923,7 @@
                       class="text-sm font-medium text-zinc-700"
                       for={`layer-${index}-rows`}
                     >
-                      Rows
+                      {$t("layers.rows")}
                     </label>
                     <input
                       id={`layer-${index}-rows`}
@@ -876,7 +941,7 @@
                       class="text-sm font-medium text-zinc-700"
                       for={`layer-${index}-cols`}
                     >
-                      Columns
+                      {$t("layers.columns")}
                     </label>
                     <input
                       id={`layer-${index}-cols`}
@@ -896,7 +961,7 @@
                       class="text-sm font-medium text-zinc-700"
                       for={`layer-${index}-keys`}
                     >
-                      Keys (space or comma separated)
+                      {$t("layers.keysHint")}
                     </label>
                     <button
                       type="button"
@@ -904,7 +969,7 @@
                       on:click={() => autoFitSingleLayer(index)}
                       disabled={isLoading}
                     >
-                      Auto-fit
+                      {$t("layers.autoFit")}
                     </button>
                   </div>
                   <textarea
@@ -915,14 +980,17 @@
                     disabled={isLoading}
                   ></textarea>
                   <p class="mt-2 text-xs text-zinc-500">
-                    Current: {layer.keys.length} / Expected: {layer.rows * layer.cols}
+                    {$t("layers.currentExpected", {
+                      current: layer.keys.length,
+                      expected: layer.rows * layer.cols,
+                    })}
                   </p>
                 </div>
               {:else}
                 <div class="mt-4 grid gap-4 md:grid-cols-2">
                   <div class="rounded-lg border border-zinc-200 p-4">
                     <p class="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                      Stage 0
+                      {$t("layers.stage0")}
                     </p>
                     <div class="mt-3 grid gap-3 md:grid-cols-2">
                       <div>
@@ -930,7 +998,7 @@
                           class="text-sm font-medium text-zinc-700"
                           for={`layer-${index}-stage0-rows`}
                         >
-                          Rows
+                          {$t("layers.rows")}
                         </label>
                         <input
                           id={`layer-${index}-stage0-rows`}
@@ -948,7 +1016,7 @@
                           class="text-sm font-medium text-zinc-700"
                           for={`layer-${index}-stage0-cols`}
                         >
-                          Columns
+                          {$t("layers.columns")}
                         </label>
                         <input
                           id={`layer-${index}-stage0-cols`}
@@ -968,7 +1036,7 @@
                           class="text-sm font-medium text-zinc-700"
                           for={`layer-${index}-stage0-keys`}
                         >
-                          Keys
+                          {$t("layers.keys")}
                         </label>
                         <button
                           type="button"
@@ -976,7 +1044,7 @@
                           on:click={() => autoFitComboStage(index, 0)}
                           disabled={isLoading}
                         >
-                          Auto-fit
+                          {$t("layers.autoFit")}
                         </button>
                       </div>
                       <textarea
@@ -988,14 +1056,16 @@
                         disabled={isLoading}
                       ></textarea>
                       <p class="mt-2 text-xs text-zinc-500">
-                        Current: {layer.stage0.keys.length} / Expected:
-                        {layer.stage0.rows * layer.stage0.cols}
+                        {$t("layers.currentExpected", {
+                          current: layer.stage0.keys.length,
+                          expected: layer.stage0.rows * layer.stage0.cols,
+                        })}
                       </p>
                     </div>
                   </div>
                   <div class="rounded-lg border border-zinc-200 p-4">
                     <p class="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                      Stage 1
+                      {$t("layers.stage1")}
                     </p>
                     <div class="mt-3 grid gap-3 md:grid-cols-2">
                       <div>
@@ -1003,7 +1073,7 @@
                           class="text-sm font-medium text-zinc-700"
                           for={`layer-${index}-stage1-rows`}
                         >
-                          Rows
+                          {$t("layers.rows")}
                         </label>
                         <input
                           id={`layer-${index}-stage1-rows`}
@@ -1021,7 +1091,7 @@
                           class="text-sm font-medium text-zinc-700"
                           for={`layer-${index}-stage1-cols`}
                         >
-                          Columns
+                          {$t("layers.columns")}
                         </label>
                         <input
                           id={`layer-${index}-stage1-cols`}
@@ -1041,7 +1111,7 @@
                           class="text-sm font-medium text-zinc-700"
                           for={`layer-${index}-stage1-keys`}
                         >
-                          Keys
+                          {$t("layers.keys")}
                         </label>
                         <button
                           type="button"
@@ -1049,7 +1119,7 @@
                           on:click={() => autoFitComboStage(index, 1)}
                           disabled={isLoading}
                         >
-                          Auto-fit
+                          {$t("layers.autoFit")}
                         </button>
                       </div>
                       <textarea
@@ -1061,8 +1131,10 @@
                         disabled={isLoading}
                       ></textarea>
                       <p class="mt-2 text-xs text-zinc-500">
-                        Current: {layer.stage1.keys.length} / Expected:
-                        {layer.stage1.rows * layer.stage1.cols}
+                        {$t("layers.currentExpected", {
+                          current: layer.stage1.keys.length,
+                          expected: layer.stage1.rows * layer.stage1.cols,
+                        })}
                       </p>
                     </div>
                   </div>
@@ -1072,7 +1144,7 @@
           {/each}
         </div>
       {:else}
-        <p class="mt-4 text-sm text-zinc-500">No active preset.</p>
+        <p class="mt-4 text-sm text-zinc-500">{$t("presets.noActive")}</p>
       {/if}
     </section>
     <section
@@ -1080,18 +1152,24 @@
     >
       <div class="flex items-center justify-between gap-4">
         <div>
-          <p class="text-xs uppercase tracking-[0.28em] text-zinc-500">Hotkeys</p>
-          <h2 class="text-lg font-semibold text-zinc-900">Key Bindings</h2>
+          <p class="text-xs uppercase tracking-[0.28em] text-zinc-500">
+            {$t("hotkeys.section")}
+          </p>
+          <h2 class="text-lg font-semibold text-zinc-900">
+            {$t("hotkeys.title")}
+          </h2>
         </div>
-        <p class="text-xs text-zinc-500">Global shortcut syntax</p>
+        <p class="text-xs text-zinc-500">{$t("hotkeys.subtitle")}</p>
       </div>
 
       <div class="mt-6 grid gap-6 md:grid-cols-2">
         <div class="space-y-4">
-          <h3 class="text-sm font-semibold text-zinc-800">Activation</h3>
+          <h3 class="text-sm font-semibold text-zinc-800">
+            {$t("hotkeys.activation")}
+          </h3>
           <div>
             <label class="text-sm font-medium text-zinc-700" for="hotkey-left">
-              Left Click
+              {$t("hotkeys.leftClick")}
             </label>
             <input
               id="hotkey-left"
@@ -1103,7 +1181,7 @@
           </div>
           <div>
             <label class="text-sm font-medium text-zinc-700" for="hotkey-right">
-              Right Click
+              {$t("hotkeys.rightClick")}
             </label>
             <input
               id="hotkey-right"
@@ -1115,7 +1193,7 @@
           </div>
           <div>
             <label class="text-sm font-medium text-zinc-700" for="hotkey-middle">
-              Middle Click
+              {$t("hotkeys.middleClick")}
             </label>
             <input
               id="hotkey-middle"
@@ -1128,10 +1206,12 @@
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-sm font-semibold text-zinc-800">Controls</h3>
+          <h3 class="text-sm font-semibold text-zinc-800">
+            {$t("hotkeys.controls")}
+          </h3>
           <div>
             <label class="text-sm font-medium text-zinc-700" for="hotkey-cancel">
-              Cancel
+              {$t("hotkeys.cancel")}
             </label>
             <input
               id="hotkey-cancel"
@@ -1143,7 +1223,7 @@
           </div>
           <div>
             <label class="text-sm font-medium text-zinc-700" for="hotkey-undo">
-              Undo
+              {$t("hotkeys.undo")}
             </label>
             <input
               id="hotkey-undo"
@@ -1158,7 +1238,7 @@
               class="text-sm font-medium text-zinc-700"
               for="hotkey-direct"
             >
-              Direct Click
+              {$t("hotkeys.directClick")}
             </label>
             <input
               id="hotkey-direct"
@@ -1177,16 +1257,20 @@
     >
       <div class="flex items-center justify-between gap-4">
         <div>
-          <p class="text-xs uppercase tracking-[0.28em] text-zinc-500">Overlay</p>
-          <h2 class="text-lg font-semibold text-zinc-900">Overlay Styling</h2>
+          <p class="text-xs uppercase tracking-[0.28em] text-zinc-500">
+            {$t("overlay.section")}
+          </p>
+          <h2 class="text-lg font-semibold text-zinc-900">
+            {$t("overlay.title")}
+          </h2>
         </div>
-        <p class="text-xs text-zinc-500">Mask, lines, typography</p>
+        <p class="text-xs text-zinc-500">{$t("overlay.subtitle")}</p>
       </div>
 
       <div class="mt-6 grid gap-6 md:grid-cols-3">
         <div>
           <label class="text-sm font-medium text-zinc-700" for="overlay-alpha">
-            Alpha (0-255)
+            {$t("overlay.alpha")}
           </label>
           <input
             id="overlay-alpha"
@@ -1201,7 +1285,7 @@
         </div>
         <div>
           <label class="text-sm font-medium text-zinc-700" for="overlay-line">
-            Line Width
+            {$t("overlay.lineWidth")}
           </label>
           <input
             id="overlay-line"
@@ -1215,7 +1299,7 @@
         </div>
         <div>
           <label class="text-sm font-medium text-zinc-700" for="overlay-font">
-            Font Size
+            {$t("overlay.fontSize")}
           </label>
           <input
             id="overlay-font"
@@ -1232,7 +1316,7 @@
             class="text-sm font-medium text-zinc-700"
             for="overlay-mask"
           >
-            Mask Color
+            {$t("overlay.maskColor")}
           </label>
           <div class="mt-2 flex items-center gap-3">
             <input
@@ -1256,7 +1340,7 @@
             class="text-sm font-medium text-zinc-700"
             for="overlay-line-color"
           >
-            Line Color
+            {$t("overlay.lineColor")}
           </label>
           <div class="mt-2 flex items-center gap-3">
             <input
@@ -1280,7 +1364,7 @@
             class="text-sm font-medium text-zinc-700"
             for="overlay-text-color"
           >
-            Text Color
+            {$t("overlay.textColor")}
           </label>
           <div class="mt-2 flex items-center gap-3">
             <input
@@ -1304,7 +1388,7 @@
             class="text-sm font-medium text-zinc-700"
             for="overlay-font-family"
           >
-            Font Family
+            {$t("overlay.fontFamily")}
           </label>
           <input
             id="overlay-font-family"
@@ -1318,8 +1402,7 @@
     </section>
 
     <p class="text-xs text-zinc-500">
-      Form-based settings are now available for presets, layers, hotkeys, and
-      overlay styles. Apply to persist and refresh runtime behavior.
+      {$t("footer.note")}
     </p>
   </div>
 </main>
