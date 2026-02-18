@@ -423,7 +423,6 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 #### Backlog
 
-- E0.1 明确 MVP 边界（3x3/5x5 默认、是否支持自定义、Windows 优先级）
 - E0.2 产出 Core Engine 规格（从原型抽象成可测试接口与状态机定义）
 - E2 Rust Native PoC（热键/鼠标/屏幕信息在 Windows 可用）
 
@@ -437,6 +436,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 #### Done
 
+- E0.1 明确 MVP 边界（以 v3.1 作为默认运行基准，先不考虑历史预设）
 - E1 初始化 Tauri + Svelte + TS 工程骨架（空壳可跑）
 - E3 遮罩窗口 PoC（透明/置顶/click-through/不抢焦点）
 - AHK 行为原型可运行（版本化；基准 v3.1）
@@ -462,3 +462,4 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - 2026-02-10：将文档收敛为两份：`README.md`（人类）与 `AGENT.md`（智能体）。
 - 2026-02-10: Initialized Tauri v2 + Svelte/TS skeleton; tray menu, overlay PoC, core engine unit test.
 - 2026-02-17：AHK 原型版本化（v1.0/v1.1 对应原脚本），基准更新为 `demo/clickey_v3.1.ahk`，文档同步。
+- 2026-02-17：MVP 边界确认：以 v3.1 作为默认运行基准，先不考虑历史预设。

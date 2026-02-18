@@ -9,7 +9,7 @@
     ClickAction,
   } from "$lib/ipc/types";
   import { applyKey, createInitialState, getCurrentStep } from "$lib/core";
-  import type { AppConfig, Region, RuntimeState } from "$lib/core";
+  import type { AppConfig, CurrentStep, Region, RuntimeState } from "$lib/core";
 
   let config = $state<AppConfig | null>(null);
   let runtime = $state<RuntimeState | null>(null);
@@ -17,6 +17,39 @@
   let clickAction = $state<ClickAction | null>(null);
   let canvas: HTMLCanvasElement | null = null;
   const currentWindow = getCurrentWindow();
+
+  function getDisplayGrid(
+    config: AppConfig,
+    runtime: RuntimeState,
+    step: CurrentStep,
+  ) {
+    if (step.mode !== "combo" || step.stage !== 0) {
+      return { rows: step.rows, cols: step.cols, keys: step.keys };
+    }
+
+    const preset = config.presets.find(
+      (candidate) => candidate.id === runtime.presetId,
+    );
+    const layer = preset?.layers[runtime.layerIndex];
+    if (!layer || layer.mode !== "combo") {
+      return { rows: step.rows, cols: step.cols, keys: step.keys };
+    }
+
+    const rowKeys = layer.stage1.keys;
+    const colKeys = layer.stage0.keys;
+    if (!rowKeys.length || !colKeys.length) {
+      return { rows: step.rows, cols: step.cols, keys: step.keys };
+    }
+
+    const labels: string[] = [];
+    for (const rowKey of rowKeys) {
+      for (const colKey of colKeys) {
+        labels.push(`${colKey}${rowKey}`);
+      }
+    }
+
+    return { rows: rowKeys.length, cols: colKeys.length, keys: labels };
+  }
 
   function draw() {
     if (!canvas) {
@@ -46,6 +79,7 @@
       return;
     }
 
+    const display = getDisplayGrid(config, runtime, step);
     const offsetX = -baseRegion.x / scale;
     const offsetY = -baseRegion.y / scale;
     const regionX = runtime.region.x / scale + offsetX;
@@ -66,10 +100,10 @@
 
     ctx.strokeRect(regionX, regionY, regionW, regionH);
 
-    const cellW = regionW / step.cols;
-    const cellH = regionH / step.rows;
+    const cellW = regionW / display.cols;
+    const cellH = regionH / display.rows;
 
-    for (let col = 1; col < step.cols; col += 1) {
+    for (let col = 1; col < display.cols; col += 1) {
       const x = regionX + col * cellW;
       ctx.beginPath();
       ctx.moveTo(x, regionY);
@@ -77,7 +111,7 @@
       ctx.stroke();
     }
 
-    for (let row = 1; row < step.rows; row += 1) {
+    for (let row = 1; row < display.rows; row += 1) {
       const y = regionY + row * cellH;
       ctx.beginPath();
       ctx.moveTo(regionX, y);
@@ -92,13 +126,16 @@
     ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
     ctx.shadowBlur = 4;
 
-    step.keys.forEach((key, index) => {
-      const row = Math.floor(index / step.cols);
-      const col = index % step.cols;
+    for (let index = 0; index < display.keys.length; index += 1) {
+      const row = Math.floor(index / display.cols);
+      const col = index % display.cols;
+      if (row >= display.rows) {
+        break;
+      }
       const x = regionX + (col + 0.5) * cellW;
       const y = regionY + (row + 0.5) * cellH;
-      ctx.fillText(key, x, y);
-    });
+      ctx.fillText(display.keys[index].toUpperCase(), x, y);
+    }
   }
 
   async function handleKey(key: string) {
