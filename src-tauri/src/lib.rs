@@ -1,6 +1,7 @@
 mod config;
 
 use config::{default_config, AppConfig, Layer};
+use enigo::{Enigo, MouseButton, MouseControllable};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -89,6 +90,8 @@ struct AppState {
     overlay_shortcuts: Mutex<Vec<Shortcut>>,
     overlay_key_map: Mutex<HashMap<u32, String>>,
     overlay_active: Mutex<bool>,
+    overlay_click_action: Mutex<Option<ClickAction>>,
+    monitor_index: Mutex<usize>,
 }
 
 #[tauri::command]
@@ -125,23 +128,22 @@ fn apply_config(
 
 #[tauri::command]
 fn native_click(app: AppHandle, payload: NativeClickPayload) -> Result<(), String> {
-    // 真实鼠标调用的占位实现，后续替换为系统级鼠标操作
     println!(
-        "[stub] native click: action={:?}, x={}, y={}",
+        "[native] click action={:?} x={} y={}",
         payload.button, payload.x, payload.y
     );
-
-    if let Some(window) = app.get_webview_window("overlay") {
-        let _ = window.hide();
-    }
-    let _ = unregister_overlay_hotkeys(&app, app.state::<AppState>().inner());
-    if let Ok(mut active) = app.state::<AppState>().overlay_active.lock() {
-        *active = false;
-    }
-    println!("[overlay] hidden after native click");
+    perform_click(&payload)?;
+    hide_overlay(&app, app.state::<AppState>().inner());
 
     Ok(())
 }
+
+#[tauri::command]
+fn close_overlay(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    hide_overlay(&app, state.inner());
+    Ok(())
+}
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -194,6 +196,10 @@ pub fn run() {
 
             if let Some(key) = overlay_key {
                 println!("[shortcut] overlay key={}", key);
+                if is_next_monitor_key(&key) {
+                    switch_monitor(app);
+                    return;
+                }
                 let _ = app.emit_to(
                     EventTarget::webview_window("overlay"),
                     "native:key",
@@ -213,10 +219,16 @@ pub fn run() {
             overlay_shortcuts: Mutex::new(Vec::new()),
             overlay_key_map: Mutex::new(HashMap::new()),
             overlay_active: Mutex::new(false),
+            overlay_click_action: Mutex::new(None),
+            monitor_index: Mutex::new(0),
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(global_shortcut_plugin)
-        .invoke_handler(tauri::generate_handler![apply_config, native_click])
+        .invoke_handler(tauri::generate_handler![
+            apply_config,
+            native_click,
+            close_overlay
+        ])
         .setup(|app| {
             let handle = app.handle();
             create_overlay_window(&handle)?;
@@ -279,36 +291,184 @@ fn create_overlay_window(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn trigger_overlay(app: &AppHandle, action: ClickAction) {
-    let region = compute_virtual_region(app);
-    let config = app
-        .state::<AppState>()
+fn show_overlay_window(app: &AppHandle, region: &Region) {
+    if let Some(window) = app.get_webview_window("overlay") {
+        let target_pos = PhysicalPosition::new(region.x as i32, region.y as i32);
+        let target_size = PhysicalSize::new(
+            region.width.max(1.0) as u32,
+            region.height.max(1.0) as u32,
+        );
+
+        let _ = window.set_position(Position::Physical(target_pos));
+        let _ = window.set_size(Size::Physical(target_size));
+        let _ = window.set_ignore_cursor_events(true);
+        let _ = window.set_focusable(false);
+        let _ = window.show();
+
+        // Align client area to the target region to avoid DWM offset on Windows.
+        if let (Ok(outer_pos), Ok(inner_pos)) = (window.outer_position(), window.inner_position()) {
+            let delta_x = inner_pos.x - outer_pos.x;
+            let delta_y = inner_pos.y - outer_pos.y;
+            if delta_x != 0 || delta_y != 0 {
+                let adjusted = PhysicalPosition::new(
+                    target_pos.x - delta_x,
+                    target_pos.y - delta_y,
+                );
+                let _ = window.set_position(Position::Physical(adjusted));
+                println!(
+                    "[overlay] adjusted position by ({}, {})",
+                    delta_x, delta_y
+                );
+            }
+        }
+
+        if let (Ok(outer_size), Ok(inner_size)) = (window.outer_size(), window.inner_size()) {
+            let border_w = outer_size.width as i32 - inner_size.width as i32;
+            let border_h = outer_size.height as i32 - inner_size.height as i32;
+            if border_w != 0 || border_h != 0 {
+                let adjusted_size = PhysicalSize::new(
+                    (target_size.width as i32 + border_w).max(1) as u32,
+                    (target_size.height as i32 + border_h).max(1) as u32,
+                );
+                let _ = window.set_size(Size::Physical(adjusted_size));
+                println!(
+                    "[overlay] adjusted size by ({}, {})",
+                    border_w, border_h
+                );
+            }
+        }
+    }
+}
+
+fn available_monitors(app: &AppHandle) -> Vec<tauri::Monitor> {
+    app.available_monitors().unwrap_or_default()
+}
+
+fn monitor_region(monitor: &tauri::Monitor) -> Region {
+    let pos = monitor.position();
+    let size = monitor.size();
+    Region {
+        x: pos.x as f64,
+        y: pos.y as f64,
+        width: size.width.max(1) as f64,
+        height: size.height.max(1) as f64,
+    }
+}
+
+fn primary_monitor_index(
+    app: &AppHandle,
+    monitors: &[tauri::Monitor],
+) -> usize {
+    if let Ok(Some(primary)) = app.primary_monitor() {
+        let primary_pos = primary.position();
+        let primary_size = primary.size();
+        if let Some((index, _)) = monitors.iter().enumerate().find(|(_, monitor)| {
+            let pos = monitor.position();
+            let size = monitor.size();
+            pos.x == primary_pos.x
+                && pos.y == primary_pos.y
+                && size.width == primary_size.width
+                && size.height == primary_size.height
+        }) {
+            return index;
+        }
+    }
+    0
+}
+
+fn set_start_monitor_index(
+    app: &AppHandle,
+    state: &AppState,
+    monitors: &[tauri::Monitor],
+) -> usize {
+    if monitors.is_empty() {
+        return 0;
+    }
+    let index = primary_monitor_index(app, monitors);
+    if let Ok(mut guard) = state.monitor_index.lock() {
+        *guard = index;
+    }
+    index
+}
+
+fn next_monitor_region(app: &AppHandle, state: &AppState) -> Region {
+    let monitors = available_monitors(app);
+    if monitors.is_empty() {
+        return compute_virtual_region(app);
+    }
+
+    let next_index = if let Ok(mut guard) = state.monitor_index.lock() {
+        let next = (*guard + 1) % monitors.len();
+        *guard = next;
+        next
+    } else {
+        0
+    };
+
+    monitor_region(&monitors[next_index])
+}
+
+fn switch_monitor(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let region = next_monitor_region(app, state.inner());
+    let config = state
         .config
         .lock()
         .map(|guard| guard.clone())
         .unwrap_or_else(|_| default_config());
-    if let Ok(mut active) = app.state::<AppState>().overlay_active.lock() {
+    let action = state
+        .overlay_click_action
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .unwrap_or(ClickAction::Left);
+
+    println!(
+        "[overlay] switch monitor region=({}, {}, {}, {})",
+        region.x, region.y, region.width, region.height
+    );
+
+    show_overlay_window(app, &region);
+
+    let payload = OverlayActivatePayload {
+        region,
+        config,
+        click_action: action,
+    };
+    let _ = app.emit_to(
+        EventTarget::webview_window("overlay"),
+        "overlay:activate",
+        payload,
+    );
+}
+
+fn trigger_overlay(app: &AppHandle, action: ClickAction) {
+    let state = app.state::<AppState>();
+    let config = state
+        .config
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|_| default_config());
+    let monitors = available_monitors(app);
+    let index = set_start_monitor_index(app, state.inner(), &monitors);
+    let region = if monitors.is_empty() {
+        compute_virtual_region(app)
+    } else {
+        monitor_region(&monitors[index])
+    };
+
+    if let Ok(mut active) = state.overlay_active.lock() {
         *active = true;
+    }
+    if let Ok(mut stored_action) = state.overlay_click_action.lock() {
+        *stored_action = Some(action.clone());
     }
     println!(
         "[overlay] show action={:?} region=({}, {}, {}, {})",
         action, region.x, region.y, region.width, region.height
     );
 
-    if let Some(window) = app.get_webview_window("overlay") {
-        // 将 Overlay 定位到“虚拟屏幕”范围内，保证多显示器一致
-        let _ = window.set_position(Position::Physical(PhysicalPosition::new(
-            region.x as i32,
-            region.y as i32,
-        )));
-        let _ = window.set_size(Size::Physical(PhysicalSize::new(
-            region.width.max(1.0) as u32,
-            region.height.max(1.0) as u32,
-        )));
-        let _ = window.set_ignore_cursor_events(true);
-        let _ = window.set_focusable(false);
-        let _ = window.show();
-    }
+    show_overlay_window(app, &region);
 
     let config_for_keys = config.clone();
     let payload = OverlayActivatePayload {
@@ -333,6 +493,35 @@ fn trigger_overlay(app: &AppHandle, action: ClickAction) {
             println!("[hotkeys] overlay register failed: {}", err);
         }
     });
+}
+
+fn hide_overlay(app: &AppHandle, state: &AppState) {
+    if let Some(window) = app.get_webview_window("overlay") {
+        let _ = window.hide();
+    }
+    let _ = unregister_overlay_hotkeys(app, state);
+    if let Ok(mut active) = state.overlay_active.lock() {
+        *active = false;
+    }
+    if let Ok(mut action) = state.overlay_click_action.lock() {
+        *action = None;
+    }
+    println!("[overlay] hidden");
+}
+
+fn perform_click(payload: &NativeClickPayload) -> Result<(), String> {
+    let mut enigo = Enigo::new();
+    let x = payload.x.round() as i32;
+    let y = payload.y.round() as i32;
+    enigo.mouse_move_to(x, y);
+
+    let button = match payload.button {
+        ClickAction::Left => MouseButton::Left,
+        ClickAction::Right => MouseButton::Right,
+        ClickAction::Middle => MouseButton::Middle,
+    };
+    enigo.mouse_click(button);
+    Ok(())
 }
 
 // stub key sequence removed; we only advance on real input
@@ -392,6 +581,19 @@ fn collect_overlay_keys(config: &AppConfig) -> Vec<String> {
             }
         }
     }
+
+    keys.push(config.hotkeys.controls.cancel.clone());
+    keys.push(config.hotkeys.controls.undo.clone());
+    keys.push(config.hotkeys.controls.direct_click.clone());
+    keys.extend([
+        "Tab",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+    ].into_iter().map(String::from));
+
+    keys.retain(|key| !key.trim().is_empty());
 
     let mut seen = HashSet::new();
     keys.retain(|key| seen.insert(key.to_lowercase()));
@@ -466,9 +668,11 @@ fn register_overlay_hotkeys(
     let mut key_map = HashMap::new();
     let mut shortcuts = Vec::new();
     for key in keys {
-        if let Some(shortcut) = parse_shortcut(&key) {
+        if let Some(shortcut) = resolve_shortcut(&key) {
             key_map.insert(shortcut.id(), key.clone());
             shortcuts.push(shortcut);
+        } else {
+            println!("[hotkeys] invalid overlay key: {}", key);
         }
     }
 
@@ -508,6 +712,64 @@ fn unregister_overlay_hotkeys(app: &AppHandle, state: &AppState) -> Result<(), S
     println!("[hotkeys] overlay unregistered");
     Ok(())
 }
+
+fn is_next_monitor_key(value: &str) -> bool {
+    value.eq_ignore_ascii_case("tab")
+}
+
+fn resolve_shortcut(value: &str) -> Option<Shortcut> {
+    if let Some(shortcut) = parse_shortcut(value) {
+        return Some(shortcut);
+    }
+
+    let fallbacks = [
+        ("Esc", "Escape"),
+        ("Escape", "Esc"),
+        ("Space", "Spacebar"),
+        ("Spacebar", "Space"),
+        ("Left", "ArrowLeft"),
+        ("ArrowLeft", "Left"),
+        ("Right", "ArrowRight"),
+        ("ArrowRight", "Right"),
+        ("Up", "ArrowUp"),
+        ("ArrowUp", "Up"),
+        ("Down", "ArrowDown"),
+        ("ArrowDown", "Down"),
+    ];
+
+    for (from, to) in fallbacks {
+        if let Some(candidate) = replace_token(value, from, to) {
+            if let Some(shortcut) = parse_shortcut(&candidate) {
+                return Some(shortcut);
+            }
+        }
+    }
+
+    None
+}
+
+fn replace_token(value: &str, from: &str, to: &str) -> Option<String> {
+    let mut replaced = false;
+    let parts: Vec<String> = value
+        .split('+')
+        .map(|part| {
+            let trimmed = part.trim();
+            if trimmed.eq_ignore_ascii_case(from) {
+                replaced = true;
+                to.to_string()
+            } else {
+                trimmed.to_string()
+            }
+        })
+        .collect();
+
+    if replaced {
+        Some(parts.join("+"))
+    } else {
+        None
+    }
+}
+
 fn parse_hotkey_id(value: &str) -> Option<u32> {
     parse_shortcut(value).map(|shortcut| shortcut.id())
 }
@@ -522,3 +784,5 @@ fn parse_shortcut_or_panic(label: &str, value: &str) -> Shortcut {
         panic!("invalid hotkey for {label}: {value}");
     })
 }
+
+

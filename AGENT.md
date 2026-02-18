@@ -424,7 +424,6 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 #### Backlog
 
 - E0.2 产出 Core Engine 规格（从原型抽象成可测试接口与状态机定义）
-- E2 Rust Native PoC（热键/鼠标/屏幕信息在 Windows 可用）
 
 #### In Progress
 
@@ -436,6 +435,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 #### Done
 
+- E2 Rust Native PoC（热键/鼠标/屏幕信息在 Windows 可用）
 - E0.1 明确 MVP 边界（以 v3.1 作为默认运行基准，先不考虑历史预设）
 - E1 初始化 Tauri + Svelte + TS 工程骨架（空壳可跑）
 - E3 遮罩窗口 PoC（透明/置顶/click-through/不抢焦点）
@@ -463,3 +463,4 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - 2026-02-10: Initialized Tauri v2 + Svelte/TS skeleton; tray menu, overlay PoC, core engine unit test.
 - 2026-02-17：AHK 原型版本化（v1.0/v1.1 对应原脚本），基准更新为 `demo/clickey_v3.1.ahk`，文档同步。
 - 2026-02-17：MVP 边界确认：以 v3.1 作为默认运行基准，先不考虑历史预设。
+- 2026-02-18：Rust Native PoC 验收通过：全局热键、控制键、鼠标点击、Tab 切屏与 Overlay 位置对齐。

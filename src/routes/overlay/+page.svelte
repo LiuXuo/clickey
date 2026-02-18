@@ -147,12 +147,26 @@
     runtime = result.state;
     draw();
 
-    if (result.clickPoint && clickAction) {
-      await invoke("native_click", {
-        x: result.clickPoint.x,
-        y: result.clickPoint.y,
-        button: clickAction,
-      });
+    if (result.clickPoint) {
+      const action = clickAction ?? "left";
+      try {
+        await invoke("native_click", {
+          payload: {
+            x: result.clickPoint.x,
+            y: result.clickPoint.y,
+            button: action,
+          },
+        });
+      } catch (err) {
+        await invoke("close_overlay");
+      } finally {
+        await currentWindow.hide();
+      }
+      return;
+    }
+
+    if (result.state.done) {
+      await invoke("close_overlay");
       await currentWindow.hide();
     }
   }
@@ -171,7 +185,7 @@
             event.payload.config,
             event.payload.region,
           );
-          clickAction = event.payload.clickAction;
+          clickAction = event.payload.clickAction ?? "left";
           draw();
         },
       );

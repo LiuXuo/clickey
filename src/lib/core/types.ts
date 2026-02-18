@@ -82,13 +82,21 @@ export interface RuntimeState {
   layerIndex: number;
   stage: ComboStage;
   region: Region;
+  baseRegion: Region;
   done: boolean;
+  history: RuntimeSnapshot[];
 }
 
 export interface EngineOutput {
   state: RuntimeState;
   clickPoint?: Point;
   didAdvance: boolean;
+}
+
+export interface RuntimeSnapshot {
+  layerIndex: number;
+  stage: ComboStage;
+  region: Region;
 }
 
 export interface CurrentStep {
