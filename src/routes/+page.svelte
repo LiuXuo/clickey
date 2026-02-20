@@ -1311,6 +1311,38 @@
             disabled={isLoading}
           />
         </div>
+        <div class="md:col-span-3">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <label
+              class="flex items-center gap-3 text-sm font-medium text-zinc-700"
+              for="overlay-show-grid"
+            >
+              <input
+                id="overlay-show-grid"
+                type="checkbox"
+                class="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900/30"
+                bind:checked={config.overlay.showGrid}
+                on:change={clearFeedback}
+                disabled={isLoading}
+              />
+              {$t("overlay.showGrid")}
+            </label>
+            <label
+              class="flex items-center gap-3 text-sm font-medium text-zinc-700"
+              for="overlay-show-diagonals"
+            >
+              <input
+                id="overlay-show-diagonals"
+                type="checkbox"
+                class="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900/30"
+                bind:checked={config.overlay.showDiagonals}
+                on:change={clearFeedback}
+                disabled={isLoading}
+              />
+              {$t("overlay.showDiagonals")}
+            </label>
+          </div>
+        </div>
         <div>
           <label
             class="text-sm font-medium text-zinc-700"

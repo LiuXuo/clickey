@@ -95,27 +95,42 @@
       .padStart(2, "0")}`;
     ctx.fillRect(0, 0, width, height);
 
-    ctx.strokeStyle = config.overlay.lineColor;
-    ctx.lineWidth = Math.max(1, config.overlay.lineWidthPx);
-
-    ctx.strokeRect(regionX, regionY, regionW, regionH);
+    const showGrid = config.overlay.showGrid;
+    const showDiagonals = config.overlay.showDiagonals;
+    if (showGrid || showDiagonals) {
+      ctx.strokeStyle = config.overlay.lineColor;
+      ctx.lineWidth = Math.max(1, config.overlay.lineWidthPx);
+    }
 
     const cellW = regionW / display.cols;
     const cellH = regionH / display.rows;
 
-    for (let col = 1; col < display.cols; col += 1) {
-      const x = regionX + col * cellW;
-      ctx.beginPath();
-      ctx.moveTo(x, regionY);
-      ctx.lineTo(x, regionY + regionH);
-      ctx.stroke();
+    if (showGrid) {
+      ctx.strokeRect(regionX, regionY, regionW, regionH);
+
+      for (let col = 1; col < display.cols; col += 1) {
+        const x = regionX + col * cellW;
+        ctx.beginPath();
+        ctx.moveTo(x, regionY);
+        ctx.lineTo(x, regionY + regionH);
+        ctx.stroke();
+      }
+
+      for (let row = 1; row < display.rows; row += 1) {
+        const y = regionY + row * cellH;
+        ctx.beginPath();
+        ctx.moveTo(regionX, y);
+        ctx.lineTo(regionX + regionW, y);
+        ctx.stroke();
+      }
     }
 
-    for (let row = 1; row < display.rows; row += 1) {
-      const y = regionY + row * cellH;
+    if (showDiagonals) {
       ctx.beginPath();
-      ctx.moveTo(regionX, y);
-      ctx.lineTo(regionX + regionW, y);
+      ctx.moveTo(regionX, regionY);
+      ctx.lineTo(regionX + regionW, regionY + regionH);
+      ctx.moveTo(regionX + regionW, regionY);
+      ctx.lineTo(regionX, regionY + regionH);
       ctx.stroke();
     }
 

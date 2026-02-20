@@ -99,6 +99,10 @@ pub struct OverlayConfig {
     pub line_color: String,
     pub text_color: String,
     pub line_width_px: u32,
+    #[serde(default = "default_overlay_show_grid")]
+    pub show_grid: bool,
+    #[serde(default = "default_overlay_show_diagonals")]
+    pub show_diagonals: bool,
     pub font: OverlayFont,
 }
 
@@ -107,6 +111,14 @@ pub struct OverlayConfig {
 pub struct OverlayFont {
     pub family: String,
     pub size_px: u32,
+}
+
+fn default_overlay_show_grid() -> bool {
+    true
+}
+
+fn default_overlay_show_diagonals() -> bool {
+    true
 }
 
 pub fn default_config() -> AppConfig {

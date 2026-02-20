@@ -68,6 +68,8 @@ export interface AppConfig {
     lineColor: string;
     textColor: string;
     lineWidthPx: number;
+    showGrid: boolean;
+    showDiagonals: boolean;
     font: {
       family: string;
       sizePx: number;

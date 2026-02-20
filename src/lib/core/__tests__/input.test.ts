@@ -46,6 +46,8 @@ function makeConfig(): AppConfig {
       lineColor: "#ffffff",
       textColor: "#ffffff",
       lineWidthPx: 1,
+      showGrid: true,
+      showDiagonals: true,
       font: { family: "Segoe UI", sizePx: 12 },
     },
   };
