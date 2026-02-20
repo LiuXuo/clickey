@@ -7,7 +7,11 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::PathBuf,
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
 };
 use tauri::{menu::Menu, menu::MenuItem, tray::TrayIconBuilder};
 use tauri::{
@@ -55,6 +59,12 @@ struct NativeKeyPayload {
     key: String,
 }
 
+#[derive(Debug, Clone)]
+struct NudgeRepeat {
+    key: String,
+    stop: Arc<AtomicBool>,
+}
+
 #[derive(Debug, Default, Clone)]
 struct ActivationHotkeyIds {
     left: Option<u32>,
@@ -94,9 +104,12 @@ struct AppState {
     overlay_active: Mutex<bool>,
     overlay_click_action: Mutex<Option<ClickAction>>,
     monitor_index: Mutex<usize>,
+    nudge_repeat: Mutex<Option<NudgeRepeat>>,
 }
 
 const CONFIG_FILE_NAME: &str = "config.json";
+const NUDGE_REPEAT_DELAY_MS: u64 = 250;
+const NUDGE_REPEAT_INTERVAL_MS: u64 = 40;
 
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
@@ -205,6 +218,10 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
     }
     if config.hotkeys.controls.direct_click.trim().is_empty() {
         return Err("directClick hotkey is empty".to_string());
+    }
+
+    if config.nudge.step_px == 0 {
+        return Err("nudge stepPx must be > 0".to_string());
     }
 
     if config.overlay.line_width_px == 0 {
@@ -355,14 +372,39 @@ pub fn run() {
 
     let global_shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, shortcut, event| {
+            let state = app.state::<AppState>();
+
+            if event.state == ShortcutState::Released {
+                let overlay_active = state
+                    .overlay_active
+                    .lock()
+                    .map(|guard| *guard)
+                    .unwrap_or(false);
+                if !overlay_active {
+                    return;
+                }
+
+                let overlay_key = state
+                    .overlay_key_map
+                    .lock()
+                    .ok()
+                    .and_then(|map| map.get(&shortcut.id()).cloned());
+
+                if let Some(key) = overlay_key {
+                    if is_nudge_key(&key) {
+                        stop_nudge_repeat(state.inner());
+                    }
+                }
+                return;
+            }
+
             if event.state != ShortcutState::Pressed {
                 return;
             }
             println!("[shortcut] pressed id={}", shortcut.id());
 
             let action = {
-                let ids = app
-                    .state::<AppState>()
+                let ids = state
                     .activation_ids
                     .lock()
                     .map(|guard| guard.clone())
@@ -376,8 +418,7 @@ pub fn run() {
                 return;
             }
 
-            let overlay_active = app
-                .state::<AppState>()
+            let overlay_active = state
                 .overlay_active
                 .lock()
                 .map(|guard| *guard)
@@ -387,8 +428,7 @@ pub fn run() {
                 return;
             }
 
-            let overlay_key = app
-                .state::<AppState>()
+            let overlay_key = state
                 .overlay_key_map
                 .lock()
                 .ok()
@@ -400,11 +440,17 @@ pub fn run() {
                     switch_monitor(app);
                     return;
                 }
+                if is_nudge_key(&key) && is_nudge_repeat_active(state.inner(), &key) {
+                    return;
+                }
                 let _ = app.emit_to(
                     EventTarget::webview_window("overlay"),
                     "native:key",
-                    NativeKeyPayload { key },
+                    NativeKeyPayload { key: key.clone() },
                 );
+                if is_nudge_key(&key) {
+                    start_nudge_repeat(app.clone(), state.inner(), key);
+                }
             } else {
                 println!("[shortcut] no overlay key mapping for id={}", shortcut.id());
             }
@@ -421,6 +467,7 @@ pub fn run() {
             overlay_active: Mutex::new(false),
             overlay_click_action: Mutex::new(None),
             monitor_index: Mutex::new(0),
+            nudge_repeat: Mutex::new(None),
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(global_shortcut_plugin)
@@ -717,6 +764,7 @@ fn hide_overlay(app: &AppHandle, state: &AppState) {
         let _ = window.hide();
     }
     let _ = unregister_overlay_hotkeys(app, state);
+    stop_nudge_repeat(state);
     if let Ok(mut active) = state.overlay_active.lock() {
         *active = false;
     }
@@ -932,6 +980,86 @@ fn unregister_overlay_hotkeys(app: &AppHandle, state: &AppState) -> Result<(), S
 
 fn is_next_monitor_key(value: &str) -> bool {
     value.eq_ignore_ascii_case("tab")
+}
+
+fn is_nudge_key(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "left"
+            | "arrowleft"
+            | "right"
+            | "arrowright"
+            | "up"
+            | "arrowup"
+            | "down"
+            | "arrowdown"
+    )
+}
+
+fn is_nudge_repeat_active(state: &AppState, key: &str) -> bool {
+    if let Ok(guard) = state.nudge_repeat.lock() {
+        if let Some(active) = guard.as_ref() {
+            return active.key.eq_ignore_ascii_case(key);
+        }
+    }
+    false
+}
+
+fn stop_nudge_repeat(state: &AppState) {
+    if let Ok(mut guard) = state.nudge_repeat.lock() {
+        if let Some(active) = guard.take() {
+            active.stop.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+fn start_nudge_repeat(app: AppHandle, state: &AppState, key: String) {
+    let stop = Arc::new(AtomicBool::new(false));
+    {
+        let mut guard = match state.nudge_repeat.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+
+        if let Some(active) = guard.as_ref() {
+            if active.key.eq_ignore_ascii_case(&key) {
+                return;
+            }
+            active.stop.store(true, Ordering::SeqCst);
+        }
+
+        *guard = Some(NudgeRepeat {
+            key: key.clone(),
+            stop: Arc::clone(&stop),
+        });
+    }
+
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(NUDGE_REPEAT_DELAY_MS));
+        loop {
+            if stop.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let overlay_active = app
+                .state::<AppState>()
+                .overlay_active
+                .lock()
+                .map(|guard| *guard)
+                .unwrap_or(false);
+            if !overlay_active {
+                break;
+            }
+
+            let _ = app.emit_to(
+                EventTarget::webview_window("overlay"),
+                "native:key",
+                NativeKeyPayload { key: key.clone() },
+            );
+
+            std::thread::sleep(Duration::from_millis(NUDGE_REPEAT_INTERVAL_MS));
+        }
+    });
 }
 
 fn resolve_shortcut(value: &str) -> Option<Shortcut> {

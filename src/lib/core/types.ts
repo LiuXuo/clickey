@@ -60,6 +60,9 @@ export interface AppConfig {
       directClick: string;
     };
   };
+  nudge: {
+    stepPx: number;
+  };
   activePresetId: string;
   presets: Preset[];
   overlay: {

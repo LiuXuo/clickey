@@ -20,6 +20,9 @@ function makeConfig(): AppConfig {
         directClick: "Space",
       },
     },
+    nudge: {
+      stepPx: 5,
+    },
     activePresetId: "test",
     presets: [
       {
@@ -125,5 +128,31 @@ describe("engine inputs", () => {
       "Left",
     );
     expect(clamped.state.region.x).toBe(0);
+  });
+
+  it("uses configured nudge step size", () => {
+    const config = makeConfig();
+    config.nudge.stepPx = 12;
+    const initial = createInitialState(config, {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+    });
+
+    const singleState: RuntimeState = {
+      ...initial,
+      layerIndex: 1,
+      stage: 0,
+      region: { x: 10, y: 10, width: 20, height: 20 },
+    };
+
+    const nudged = applyKey(config, singleState, "Right");
+    expect(nudged.state.region).toEqual({
+      x: 22,
+      y: 10,
+      width: 20,
+      height: 20,
+    });
   });
 });

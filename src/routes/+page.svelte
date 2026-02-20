@@ -466,6 +466,12 @@
     clearFeedback();
   }
 
+  function updateNudgeStep(event: Event) {
+    const target = event.currentTarget as HTMLInputElement;
+    config.nudge.stepPx = toPositiveInt(target.value, config.nudge.stepPx);
+    clearFeedback();
+  }
+
   function validateConfig(candidate: AppConfig): string[] {
     const issues: string[] = [];
 
@@ -563,6 +569,10 @@
     }
     if (!candidate.hotkeys.controls.directClick.trim()) {
       issues.push($t("errors.directClickHotkeyEmpty"));
+    }
+
+    if (candidate.nudge.stepPx <= 0) {
+      issues.push($t("errors.nudgeStep"));
     }
 
     if (candidate.overlay.lineWidthPx <= 0) {
@@ -804,6 +814,39 @@
               </p>
             {/if}
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section
+      class="rounded-2xl border border-zinc-200 bg-white/90 p-6 shadow-sm backdrop-blur"
+    >
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <p class="text-xs uppercase tracking-[0.28em] text-zinc-500">
+            {$t("nudge.section")}
+          </p>
+          <h2 class="text-lg font-semibold text-zinc-900">
+            {$t("nudge.title")}
+          </h2>
+        </div>
+        <p class="text-xs text-zinc-500">{$t("nudge.subtitle")}</p>
+      </div>
+
+      <div class="mt-6 grid gap-6 md:grid-cols-2">
+        <div>
+          <label class="text-sm font-medium text-zinc-700" for="nudge-step">
+            {$t("nudge.step")}
+          </label>
+          <input
+            id="nudge-step"
+            type="number"
+            min="1"
+            class={fieldClass}
+            value={config.nudge.stepPx}
+            on:input={updateNudgeStep}
+            disabled={isLoading}
+          />
         </div>
       </div>
     </section>

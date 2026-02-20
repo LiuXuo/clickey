@@ -19,6 +19,9 @@
       "directClick": "Space"
     }
   },
+  "nudge": {
+    "stepPx": 5
+  },
   "activePresetId": "v3.1-default",
   "presets": [
     {

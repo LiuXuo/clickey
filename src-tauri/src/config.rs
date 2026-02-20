@@ -8,6 +8,8 @@ pub const DEFAULT_CONFIG_JSON: &str = include_str!("../../src/lib/shared/default
 pub struct AppConfig {
     pub app: AppSection,
     pub hotkeys: HotkeysConfig,
+    #[serde(default)]
+    pub nudge: NudgeConfig,
     pub active_preset_id: String,
     pub presets: Vec<Preset>,
     pub overlay: OverlayConfig,
@@ -59,6 +61,18 @@ pub struct ControlHotkeys {
     pub cancel: String,
     pub undo: String,
     pub direct_click: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NudgeConfig {
+    pub step_px: u32,
+}
+
+impl Default for NudgeConfig {
+    fn default() -> Self {
+        Self { step_px: 5 }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

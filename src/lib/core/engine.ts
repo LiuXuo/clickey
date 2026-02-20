@@ -65,17 +65,22 @@ function normalizeControlKeys(config: AppConfig) {
   };
 }
 
-function getNudgeDelta(key: string): Point | null {
-  const normalized = normalizeKey(key);
-  switch (normalized) {
+function resolveNudgeStep(config: AppConfig): number {
+  const raw = config.nudge?.stepPx ?? 5;
+  const normalized = Number.isFinite(raw) ? Math.round(raw) : 5;
+  return normalized > 0 ? normalized : 5;
+}
+
+function getNudgeDelta(normalizedKey: string, stepPx: number): Point | null {
+  switch (normalizedKey) {
     case "left":
-      return { x: -5, y: 0 };
+      return { x: -stepPx, y: 0 };
     case "right":
-      return { x: 5, y: 0 };
+      return { x: stepPx, y: 0 };
     case "up":
-      return { x: 0, y: -5 };
+      return { x: 0, y: -stepPx };
     case "down":
-      return { x: 0, y: 5 };
+      return { x: 0, y: stepPx };
     default:
       return null;
   }
@@ -178,7 +183,7 @@ export function applyKey(
     };
   }
 
-  const nudge = getNudgeDelta(normalizedKey);
+  const nudge = getNudgeDelta(normalizedKey, resolveNudgeStep(config));
   if (nudge) {
     const step = getCurrentStep(config, state);
     if (!step || step.mode !== "single") {
