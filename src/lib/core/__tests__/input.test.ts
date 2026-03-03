@@ -120,7 +120,12 @@ describe("engine inputs", () => {
     };
 
     const nudged = applyKey(config, singleState, "Right");
-    expect(nudged.state.region).toEqual({ x: 15, y: 10, width: 20, height: 20 });
+    expect(nudged.state.region).toEqual({
+      x: 15,
+      y: 10,
+      width: 20,
+      height: 20,
+    });
 
     const clamped = applyKey(
       config,

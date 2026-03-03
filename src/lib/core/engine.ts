@@ -108,10 +108,7 @@ function nudgeRegion(region: Region, base: Region, delta: Point): Region {
 
 function regionsEqual(a: Region, b: Region): boolean {
   return (
-    a.x === b.x &&
-    a.y === b.y &&
-    a.width === b.width &&
-    a.height === b.height
+    a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
   );
 }
 

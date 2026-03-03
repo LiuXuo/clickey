@@ -361,7 +361,6 @@ fn close_overlay(app: AppHandle, state: State<'_, AppState>) -> Result<(), Strin
     Ok(())
 }
 
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let default_cfg = default_config();
@@ -558,10 +557,8 @@ fn create_overlay_window(app: &AppHandle) -> tauri::Result<()> {
 fn show_overlay_window(app: &AppHandle, region: &Region) {
     if let Some(window) = app.get_webview_window("overlay") {
         let target_pos = PhysicalPosition::new(region.x as i32, region.y as i32);
-        let target_size = PhysicalSize::new(
-            region.width.max(1.0) as u32,
-            region.height.max(1.0) as u32,
-        );
+        let target_size =
+            PhysicalSize::new(region.width.max(1.0) as u32, region.height.max(1.0) as u32);
 
         let _ = window.set_position(Position::Physical(target_pos));
         let _ = window.set_size(Size::Physical(target_size));
@@ -574,15 +571,10 @@ fn show_overlay_window(app: &AppHandle, region: &Region) {
             let delta_x = inner_pos.x - outer_pos.x;
             let delta_y = inner_pos.y - outer_pos.y;
             if delta_x != 0 || delta_y != 0 {
-                let adjusted = PhysicalPosition::new(
-                    target_pos.x - delta_x,
-                    target_pos.y - delta_y,
-                );
+                let adjusted =
+                    PhysicalPosition::new(target_pos.x - delta_x, target_pos.y - delta_y);
                 let _ = window.set_position(Position::Physical(adjusted));
-                println!(
-                    "[overlay] adjusted position by ({}, {})",
-                    delta_x, delta_y
-                );
+                println!("[overlay] adjusted position by ({}, {})", delta_x, delta_y);
             }
         }
 
@@ -595,10 +587,7 @@ fn show_overlay_window(app: &AppHandle, region: &Region) {
                     (target_size.height as i32 + border_h).max(1) as u32,
                 );
                 let _ = window.set_size(Size::Physical(adjusted_size));
-                println!(
-                    "[overlay] adjusted size by ({}, {})",
-                    border_w, border_h
-                );
+                println!("[overlay] adjusted size by ({}, {})", border_w, border_h);
             }
         }
     }
@@ -619,10 +608,7 @@ fn monitor_region(monitor: &tauri::Monitor) -> Region {
     }
 }
 
-fn primary_monitor_index(
-    app: &AppHandle,
-    monitors: &[tauri::Monitor],
-) -> usize {
+fn primary_monitor_index(app: &AppHandle, monitors: &[tauri::Monitor]) -> usize {
     if let Ok(Some(primary)) = app.primary_monitor() {
         let primary_pos = primary.position();
         let primary_size = primary.size();
@@ -850,13 +836,11 @@ fn collect_overlay_keys(config: &AppConfig) -> Vec<String> {
     keys.push(config.hotkeys.controls.cancel.clone());
     keys.push(config.hotkeys.controls.undo.clone());
     keys.push(config.hotkeys.controls.direct_click.clone());
-    keys.extend([
-        "Tab",
-        "ArrowLeft",
-        "ArrowRight",
-        "ArrowUp",
-        "ArrowDown",
-    ].into_iter().map(String::from));
+    keys.extend(
+        ["Tab", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]
+            .into_iter()
+            .map(String::from),
+    );
 
     keys.retain(|key| !key.trim().is_empty());
 
@@ -985,14 +969,7 @@ fn is_next_monitor_key(value: &str) -> bool {
 fn is_nudge_key(value: &str) -> bool {
     matches!(
         value.to_ascii_lowercase().as_str(),
-        "left"
-            | "arrowleft"
-            | "right"
-            | "arrowright"
-            | "up"
-            | "arrowup"
-            | "down"
-            | "arrowdown"
+        "left" | "arrowleft" | "right" | "arrowright" | "up" | "arrowup" | "down" | "arrowdown"
     )
 }
 
@@ -1129,5 +1106,3 @@ fn parse_shortcut_or_panic(label: &str, value: &str) -> Shortcut {
         panic!("invalid hotkey for {label}: {value}");
     })
 }
-
-

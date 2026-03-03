@@ -5,9 +5,7 @@
   import defaultConfig from "$lib/shared/default-config.json";
   import type { AppConfig, Preset } from "$lib/core";
 
-  const initialConfig = JSON.parse(
-    JSON.stringify(defaultConfig),
-  ) as AppConfig;
+  const initialConfig = JSON.parse(JSON.stringify(defaultConfig)) as AppConfig;
 
   const fieldClass =
     "mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 disabled:cursor-not-allowed disabled:bg-zinc-100";
@@ -131,9 +129,7 @@
     }
 
     if (
-      !confirm(
-        $t("errors.removePresetConfirm", { name: activePreset.name }),
-      )
+      !confirm($t("errors.removePresetConfirm", { name: activePreset.name }))
     ) {
       return;
     }
@@ -184,17 +180,11 @@
       mode: "combo" as const,
       stage0: {
         ...defaults.stage0,
-        keys: fillKeys(
-          pooled,
-          defaults.stage0.rows * defaults.stage0.cols,
-        ),
+        keys: fillKeys(pooled, defaults.stage0.rows * defaults.stage0.cols),
       },
       stage1: {
         ...defaults.stage1,
-        keys: fillKeys(
-          pooled,
-          defaults.stage1.rows * defaults.stage1.cols,
-        ),
+        keys: fillKeys(pooled, defaults.stage1.rows * defaults.stage1.cols),
       },
     };
     const nextLayers = [...preset.layers];
@@ -292,8 +282,14 @@
     }
     const preset = config.presets[activePresetIndex];
     const base = getDefaultComboLayer();
-    const stage0Keys = fillKeys(base.stage0.keys, base.stage0.rows * base.stage0.cols);
-    const stage1Keys = fillKeys(base.stage1.keys, base.stage1.rows * base.stage1.cols);
+    const stage0Keys = fillKeys(
+      base.stage0.keys,
+      base.stage0.rows * base.stage0.cols,
+    );
+    const stage1Keys = fillKeys(
+      base.stage1.keys,
+      base.stage1.rows * base.stage1.cols,
+    );
     preset.layers = [
       ...preset.layers,
       {
@@ -333,7 +329,9 @@
     if (!confirm($t("errors.removeLayerConfirm", { index: index + 1 }))) {
       return;
     }
-    preset.layers = preset.layers.filter((_, layerIndex) => layerIndex !== index);
+    preset.layers = preset.layers.filter(
+      (_, layerIndex) => layerIndex !== index,
+    );
     clearFeedback();
   }
 
@@ -418,11 +416,7 @@
     clearFeedback();
   }
 
-  function updateComboStageKeys(
-    index: number,
-    stage: 0 | 1,
-    event: Event,
-  ) {
+  function updateComboStageKeys(index: number, stage: 0 | 1, event: Event) {
     if (activePresetIndex < 0) {
       return;
     }
@@ -439,12 +433,7 @@
 
   function updateOverlayAlpha(event: Event) {
     const target = event.currentTarget as HTMLInputElement;
-    config.overlay.alpha = clampInt(
-      target.value,
-      0,
-      255,
-      config.overlay.alpha,
-    );
+    config.overlay.alpha = clampInt(target.value, 0, 255, config.overlay.alpha);
     clearFeedback();
   }
 
@@ -480,7 +469,7 @@
       return issues;
     }
 
-    const presetIds = new Set<string>();
+    const presetIds: Record<string, true> = {};
     for (const preset of candidate.presets) {
       if (!preset.id.trim()) {
         issues.push($t("errors.presetIdEmpty"));
@@ -488,10 +477,10 @@
       if (!preset.name.trim()) {
         issues.push($t("errors.presetNameEmpty"));
       }
-      if (presetIds.has(preset.id)) {
+      if (presetIds[preset.id]) {
         issues.push($t("errors.duplicatePresetId", { id: preset.id }));
       }
-      presetIds.add(preset.id);
+      presetIds[preset.id] = true;
       if (!preset.layers.length) {
         issues.push($t("errors.presetNoLayers", { id: preset.id }));
       }
@@ -548,7 +537,7 @@
       });
     }
 
-    if (!presetIds.has(candidate.activePresetId)) {
+    if (!presetIds[candidate.activePresetId]) {
       issues.push($t("errors.activePresetMissing"));
     }
 
@@ -657,7 +646,7 @@
             id="locale-select"
             class={compactSelectClass}
             value={$locale}
-            on:change={onLocaleChange}
+            onchange={onLocaleChange}
             disabled={isLoading}
           >
             <option value="zh-CN">{$t("language.zh")}</option>
@@ -667,7 +656,7 @@
         <button
           type="button"
           class="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-          on:click={applyConfig}
+          onclick={applyConfig}
           disabled={isApplying || isLoading}
         >
           {isLoading
@@ -679,7 +668,7 @@
         <button
           type="button"
           class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-          on:click={resetConfig}
+          onclick={resetConfig}
           disabled={isResetting || isLoading}
         >
           {isResetting ? $t("app.resetting") : $t("app.reset")}
@@ -716,17 +705,20 @@
       <div class="mt-6 grid gap-6 md:grid-cols-[1.1fr_0.9fr]">
         <div class="space-y-4">
           <div>
-            <label class="text-sm font-medium text-zinc-700" for="preset-select">
+            <label
+              class="text-sm font-medium text-zinc-700"
+              for="preset-select"
+            >
               {$t("presets.active")}
             </label>
             <select
               id="preset-select"
               class={fieldClass}
-              on:change={onPresetChange}
+              onchange={onPresetChange}
               value={config.activePresetId}
               disabled={isLoading}
             >
-              {#each config.presets as preset}
+              {#each config.presets as preset (preset.id)}
                 <option value={preset.id}>{preset.name}</option>
               {/each}
             </select>
@@ -740,7 +732,7 @@
               id="preset-name"
               class={fieldClass}
               value={activePreset?.name ?? ""}
-              on:input={updateActivePresetName}
+              oninput={updateActivePresetName}
               disabled={isLoading || !activePreset}
               placeholder={$t("presets.namePlaceholder")}
             />
@@ -753,7 +745,7 @@
             <button
               type="button"
               class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-              on:click={duplicateActivePreset}
+              onclick={duplicateActivePreset}
               disabled={isLoading || !activePreset}
             >
               {$t("presets.duplicateActive")}
@@ -761,7 +753,7 @@
             <button
               type="button"
               class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-              on:click={removeActivePreset}
+              onclick={removeActivePreset}
               disabled={isLoading || config.presets.length <= 1}
             >
               {$t("presets.removeActive")}
@@ -775,7 +767,7 @@
               {$t("presets.list")}
             </p>
             <div class="mt-3 divide-y divide-zinc-100 text-sm">
-              {#each config.presets as preset}
+              {#each config.presets as preset (preset.id)}
                 <div
                   class={`flex items-center justify-between gap-3 py-2 ${preset.id === config.activePresetId ? "text-zinc-900" : "text-zinc-600"}`}
                 >
@@ -797,7 +789,7 @@
             </p>
             {#if activePreset}
               <div class="mt-3 space-y-2 text-sm text-zinc-700">
-                {#each activePreset.layers as layer, index}
+                {#each activePreset.layers as layer, index (index)}
                   <div class="flex items-center justify-between">
                     <span>{$t("layers.layerLabel", { index: index + 1 })}</span>
                     <span class="text-xs text-zinc-500">
@@ -844,7 +836,7 @@
             min="1"
             class={fieldClass}
             value={config.nudge.stepPx}
-            on:input={updateNudgeStep}
+            oninput={updateNudgeStep}
             disabled={isLoading}
           />
         </div>
@@ -867,7 +859,7 @@
           <button
             type="button"
             class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-            on:click={addSingleLayer}
+            onclick={addSingleLayer}
             disabled={isLoading || !activePreset}
           >
             {$t("layers.addSingle")}
@@ -875,7 +867,7 @@
           <button
             type="button"
             class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-            on:click={addComboLayer}
+            onclick={addComboLayer}
             disabled={isLoading || !activePreset}
           >
             {$t("layers.addCombo")}
@@ -886,7 +878,7 @@
 
       {#if activePreset}
         <div class="mt-6 space-y-4">
-          {#each activePreset.layers as layer, index}
+          {#each activePreset.layers as layer, index (index)}
             <div class="rounded-xl border border-zinc-200 p-4">
               <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -910,11 +902,12 @@
                     id={`layer-${index}-mode`}
                     class={fieldClass}
                     value={layer.mode}
-                    on:change={(event) =>
+                    onchange={(event) =>
                       switchLayerMode(
                         index,
-                        (event.currentTarget as HTMLSelectElement)
-                          .value as "single" | "combo",
+                        (event.currentTarget as HTMLSelectElement).value as
+                          | "single"
+                          | "combo",
                       )}
                     disabled={isLoading}
                   >
@@ -926,7 +919,7 @@
                   <button
                     type="button"
                     class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-                    on:click={() => moveLayer(index, -1)}
+                    onclick={() => moveLayer(index, -1)}
                     disabled={isLoading || index === 0}
                   >
                     {$t("layers.moveUp")}
@@ -934,15 +927,16 @@
                   <button
                     type="button"
                     class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-                    on:click={() => moveLayer(index, 1)}
-                    disabled={isLoading || index === activePreset.layers.length - 1}
+                    onclick={() => moveLayer(index, 1)}
+                    disabled={isLoading ||
+                      index === activePreset.layers.length - 1}
                   >
                     {$t("layers.moveDown")}
                   </button>
                   <button
                     type="button"
                     class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-                    on:click={() => removeLayer(index)}
+                    onclick={() => removeLayer(index)}
                     disabled={isLoading || activePreset.layers.length <= 1}
                   >
                     {$t("layers.remove")}
@@ -974,7 +968,7 @@
                       min="1"
                       class={fieldClass}
                       value={layer.rows}
-                      on:input={(event) =>
+                      oninput={(event) =>
                         updateSingleLayerGrid(index, "rows", event)}
                       disabled={isLoading}
                     />
@@ -992,7 +986,7 @@
                       min="1"
                       class={fieldClass}
                       value={layer.cols}
-                      on:input={(event) =>
+                      oninput={(event) =>
                         updateSingleLayerGrid(index, "cols", event)}
                       disabled={isLoading}
                     />
@@ -1009,7 +1003,7 @@
                     <button
                       type="button"
                       class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-                      on:click={() => autoFitSingleLayer(index)}
+                      onclick={() => autoFitSingleLayer(index)}
                       disabled={isLoading}
                     >
                       {$t("layers.autoFit")}
@@ -1019,7 +1013,7 @@
                     id={`layer-${index}-keys`}
                     class={textAreaClass}
                     value={formatKeys(layer.keys)}
-                    on:input={(event) => updateSingleLayerKeys(index, event)}
+                    oninput={(event) => updateSingleLayerKeys(index, event)}
                     disabled={isLoading}
                   ></textarea>
                   <p class="mt-2 text-xs text-zinc-500">
@@ -1032,7 +1026,9 @@
               {:else}
                 <div class="mt-4 grid gap-4 md:grid-cols-2">
                   <div class="rounded-lg border border-zinc-200 p-4">
-                    <p class="text-xs uppercase tracking-[0.24em] text-zinc-500">
+                    <p
+                      class="text-xs uppercase tracking-[0.24em] text-zinc-500"
+                    >
                       {$t("layers.stage0")}
                     </p>
                     <div class="mt-3 grid gap-3 md:grid-cols-2">
@@ -1049,7 +1045,7 @@
                           min="1"
                           class={fieldClass}
                           value={layer.stage0.rows}
-                          on:input={(event) =>
+                          oninput={(event) =>
                             updateComboStageGrid(index, 0, "rows", event)}
                           disabled={isLoading}
                         />
@@ -1067,7 +1063,7 @@
                           min="1"
                           class={fieldClass}
                           value={layer.stage0.cols}
-                          on:input={(event) =>
+                          oninput={(event) =>
                             updateComboStageGrid(index, 0, "cols", event)}
                           disabled={isLoading}
                         />
@@ -1084,7 +1080,7 @@
                         <button
                           type="button"
                           class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-                          on:click={() => autoFitComboStage(index, 0)}
+                          onclick={() => autoFitComboStage(index, 0)}
                           disabled={isLoading}
                         >
                           {$t("layers.autoFit")}
@@ -1094,7 +1090,7 @@
                         id={`layer-${index}-stage0-keys`}
                         class={textAreaClass}
                         value={formatKeys(layer.stage0.keys)}
-                        on:input={(event) =>
+                        oninput={(event) =>
                           updateComboStageKeys(index, 0, event)}
                         disabled={isLoading}
                       ></textarea>
@@ -1107,7 +1103,9 @@
                     </div>
                   </div>
                   <div class="rounded-lg border border-zinc-200 p-4">
-                    <p class="text-xs uppercase tracking-[0.24em] text-zinc-500">
+                    <p
+                      class="text-xs uppercase tracking-[0.24em] text-zinc-500"
+                    >
                       {$t("layers.stage1")}
                     </p>
                     <div class="mt-3 grid gap-3 md:grid-cols-2">
@@ -1124,7 +1122,7 @@
                           min="1"
                           class={fieldClass}
                           value={layer.stage1.rows}
-                          on:input={(event) =>
+                          oninput={(event) =>
                             updateComboStageGrid(index, 1, "rows", event)}
                           disabled={isLoading}
                         />
@@ -1142,7 +1140,7 @@
                           min="1"
                           class={fieldClass}
                           value={layer.stage1.cols}
-                          on:input={(event) =>
+                          oninput={(event) =>
                             updateComboStageGrid(index, 1, "cols", event)}
                           disabled={isLoading}
                         />
@@ -1159,7 +1157,7 @@
                         <button
                           type="button"
                           class="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-                          on:click={() => autoFitComboStage(index, 1)}
+                          onclick={() => autoFitComboStage(index, 1)}
                           disabled={isLoading}
                         >
                           {$t("layers.autoFit")}
@@ -1169,7 +1167,7 @@
                         id={`layer-${index}-stage1-keys`}
                         class={textAreaClass}
                         value={formatKeys(layer.stage1.keys)}
-                        on:input={(event) =>
+                        oninput={(event) =>
                           updateComboStageKeys(index, 1, event)}
                         disabled={isLoading}
                       ></textarea>
@@ -1218,7 +1216,7 @@
               id="hotkey-left"
               class={fieldClass}
               bind:value={config.hotkeys.activation.leftClick}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
           </div>
@@ -1230,19 +1228,22 @@
               id="hotkey-right"
               class={fieldClass}
               bind:value={config.hotkeys.activation.rightClick}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
           </div>
           <div>
-            <label class="text-sm font-medium text-zinc-700" for="hotkey-middle">
+            <label
+              class="text-sm font-medium text-zinc-700"
+              for="hotkey-middle"
+            >
               {$t("hotkeys.middleClick")}
             </label>
             <input
               id="hotkey-middle"
               class={fieldClass}
               bind:value={config.hotkeys.activation.middleClick}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
           </div>
@@ -1253,14 +1254,17 @@
             {$t("hotkeys.controls")}
           </h3>
           <div>
-            <label class="text-sm font-medium text-zinc-700" for="hotkey-cancel">
+            <label
+              class="text-sm font-medium text-zinc-700"
+              for="hotkey-cancel"
+            >
               {$t("hotkeys.cancel")}
             </label>
             <input
               id="hotkey-cancel"
               class={fieldClass}
               bind:value={config.hotkeys.controls.cancel}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
           </div>
@@ -1272,7 +1276,7 @@
               id="hotkey-undo"
               class={fieldClass}
               bind:value={config.hotkeys.controls.undo}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
           </div>
@@ -1287,7 +1291,7 @@
               id="hotkey-direct"
               class={fieldClass}
               bind:value={config.hotkeys.controls.directClick}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
           </div>
@@ -1322,7 +1326,7 @@
             max="255"
             class={fieldClass}
             value={config.overlay.alpha}
-            on:input={updateOverlayAlpha}
+            oninput={updateOverlayAlpha}
             disabled={isLoading}
           />
         </div>
@@ -1336,7 +1340,7 @@
             min="1"
             class={fieldClass}
             value={config.overlay.lineWidthPx}
-            on:input={updateOverlayLineWidth}
+            oninput={updateOverlayLineWidth}
             disabled={isLoading}
           />
         </div>
@@ -1350,7 +1354,7 @@
             min="1"
             class={fieldClass}
             value={config.overlay.font.sizePx}
-            on:input={updateOverlayFontSize}
+            oninput={updateOverlayFontSize}
             disabled={isLoading}
           />
         </div>
@@ -1365,7 +1369,7 @@
                 type="checkbox"
                 class="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900/30"
                 bind:checked={config.overlay.showGrid}
-                on:change={clearFeedback}
+                onchange={clearFeedback}
                 disabled={isLoading}
               />
               {$t("overlay.showGrid")}
@@ -1379,7 +1383,7 @@
                 type="checkbox"
                 class="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900/30"
                 bind:checked={config.overlay.showDiagonals}
-                on:change={clearFeedback}
+                onchange={clearFeedback}
                 disabled={isLoading}
               />
               {$t("overlay.showDiagonals")}
@@ -1387,10 +1391,7 @@
           </div>
         </div>
         <div>
-          <label
-            class="text-sm font-medium text-zinc-700"
-            for="overlay-mask"
-          >
+          <label class="text-sm font-medium text-zinc-700" for="overlay-mask">
             {$t("overlay.maskColor")}
           </label>
           <div class="mt-2 flex items-center gap-3">
@@ -1399,13 +1400,13 @@
               type="color"
               class={colorInputClass}
               bind:value={config.overlay.maskColor}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
             <input
               class={inlineFieldClass}
               bind:value={config.overlay.maskColor}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
           </div>
@@ -1423,13 +1424,13 @@
               type="color"
               class={colorInputClass}
               bind:value={config.overlay.lineColor}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
             <input
               class={inlineFieldClass}
               bind:value={config.overlay.lineColor}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
           </div>
@@ -1447,13 +1448,13 @@
               type="color"
               class={colorInputClass}
               bind:value={config.overlay.textColor}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
             <input
               class={inlineFieldClass}
               bind:value={config.overlay.textColor}
-              on:input={clearFeedback}
+              oninput={clearFeedback}
               disabled={isLoading}
             />
           </div>
@@ -1469,7 +1470,7 @@
             id="overlay-font-family"
             class={fieldClass}
             bind:value={config.overlay.font.family}
-            on:input={clearFeedback}
+            oninput={clearFeedback}
             disabled={isLoading}
           />
         </div>

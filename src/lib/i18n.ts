@@ -93,7 +93,8 @@ const zh = {
   "errors.duplicatePresetId": "重复的预设 ID：{id}",
   "errors.presetNoLayers": "预设 {id} 没有层。",
   "errors.layerGridInvalid": "预设 {id} 的第 {index} 层网格无效。",
-  "errors.layerExpectedKeys": "预设 {id} 的第 {index} 层需要 {expected} 个键位。",
+  "errors.layerExpectedKeys":
+    "预设 {id} 的第 {index} 层需要 {expected} 个键位。",
   "errors.stage0GridInvalid": "预设 {id} 的第 {index} 层阶段 0 网格无效。",
   "errors.stage1GridInvalid": "预设 {id} 的第 {index} 层阶段 1 网格无效。",
   "errors.stage0ExpectedKeys":
@@ -193,7 +194,7 @@ const en: Record<TranslationKey, string> = {
   "footer.note":
     "Form-based settings are now available for presets, layers, hotkeys, and overlay styles. Apply to persist and refresh runtime behavior.",
   "errors.presetRequired": "At least one preset is required.",
-  "errors.removePresetConfirm": "Remove preset \"{name}\"?",
+  "errors.removePresetConfirm": 'Remove preset "{name}"?',
   "errors.removeLayerConfirm": "Remove layer {index}?",
   "errors.presetLayerRequired": "Preset must have at least one layer.",
   "errors.presetsEmpty": "Presets list is empty.",
@@ -204,10 +205,8 @@ const en: Record<TranslationKey, string> = {
   "errors.layerGridInvalid": "Preset {id} layer {index} grid is invalid.",
   "errors.layerExpectedKeys":
     "Preset {id} layer {index} expects {expected} keys.",
-  "errors.stage0GridInvalid":
-    "Preset {id} layer {index} stage0 grid invalid.",
-  "errors.stage1GridInvalid":
-    "Preset {id} layer {index} stage1 grid invalid.",
+  "errors.stage0GridInvalid": "Preset {id} layer {index} stage0 grid invalid.",
+  "errors.stage1GridInvalid": "Preset {id} layer {index} stage1 grid invalid.",
   "errors.stage0ExpectedKeys":
     "Preset {id} layer {index} stage0 expects {expected} keys.",
   "errors.stage1ExpectedKeys":
@@ -247,9 +246,7 @@ export const locale = writable<Locale>(DEFAULT_LOCALE);
 export const t = derived(locale, ($locale) => {
   return (key: TranslationKey, params?: TranslationParams) => {
     const template =
-      translations[$locale]?.[key] ??
-      translations[DEFAULT_LOCALE][key] ??
-      key;
+      translations[$locale]?.[key] ?? translations[DEFAULT_LOCALE][key] ?? key;
     return formatter(template, params);
   };
 });

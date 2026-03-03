@@ -172,7 +172,7 @@
             button: action,
           },
         });
-      } catch (err) {
+      } catch {
         await invoke("close_overlay");
       } finally {
         await currentWindow.hide();
