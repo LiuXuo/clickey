@@ -41,6 +41,7 @@ export interface Preset {
 
 export interface AppConfig {
   app: {
+    locale: "zh-CN" | "en-US";
     tray: {
       enabled: boolean;
     };

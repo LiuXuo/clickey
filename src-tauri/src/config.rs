@@ -24,6 +24,8 @@ impl Default for AppConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSection {
+    #[serde(default = "default_locale")]
+    pub locale: String,
     pub tray: TrayConfig,
     pub settings_window: SettingsWindowConfig,
 }
@@ -133,6 +135,10 @@ fn default_overlay_show_grid() -> bool {
 
 fn default_overlay_show_diagonals() -> bool {
     true
+}
+
+fn default_locale() -> String {
+    "zh-CN".to_string()
 }
 
 pub fn default_config() -> AppConfig {

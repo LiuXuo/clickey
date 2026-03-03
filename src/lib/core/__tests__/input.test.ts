@@ -5,6 +5,7 @@ import { applyKey, createInitialState } from "../engine";
 function makeConfig(): AppConfig {
   return {
     app: {
+      locale: "zh-CN",
       tray: { enabled: true },
       settingsWindow: { openFromTray: true },
     },

@@ -71,7 +71,13 @@
 
   function onLocaleChange(event: Event) {
     const target = event.currentTarget as HTMLSelectElement;
-    setLocale(target.value as Locale);
+    const next = target.value as Locale;
+    setLocale(next);
+    config.app.locale = next;
+    clearFeedback();
+    void invoke("set_locale", { locale: next }).catch((err) => {
+      error = err instanceof Error ? err.message : String(err);
+    });
   }
 
   function onPresetChange(event: Event) {
@@ -600,6 +606,9 @@
     try {
       const reset = await invoke<AppConfig>("reset_config");
       config = reset;
+      if (reset.app.locale === "zh-CN" || reset.app.locale === "en-US") {
+        setLocale(reset.app.locale);
+      }
       status = $t("status.reset");
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -614,6 +623,9 @@
       try {
         const loaded = await invoke<AppConfig>("get_config");
         config = loaded;
+        if (loaded.app.locale === "zh-CN" || loaded.app.locale === "en-US") {
+          setLocale(loaded.app.locale);
+        }
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
       } finally {

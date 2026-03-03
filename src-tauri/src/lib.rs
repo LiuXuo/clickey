@@ -13,7 +13,15 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{menu::Menu, menu::MenuItem, tray::TrayIconBuilder};
+use tauri::{
+    menu::Menu,
+    menu::MenuItem,
+    tray::{
+        MouseButton as TrayMouseButton, MouseButtonState as TrayMouseButtonState, TrayIconBuilder,
+        TrayIconEvent,
+    },
+    Wry,
+};
 use tauri::{
     AppHandle, Emitter, EventTarget, Manager, PhysicalPosition, PhysicalSize, Position, Size,
     State, WebviewUrl, WebviewWindowBuilder,
@@ -105,11 +113,39 @@ struct AppState {
     overlay_click_action: Mutex<Option<ClickAction>>,
     monitor_index: Mutex<usize>,
     nudge_repeat: Mutex<Option<NudgeRepeat>>,
+    paused: Mutex<bool>,
+    tray_menu_items: Mutex<Option<TrayMenuItems>>,
+}
+
+type AppMenuItem = MenuItem<Wry>;
+
+#[derive(Clone)]
+struct TrayMenuItems {
+    settings: AppMenuItem,
+    toggle_runtime: AppMenuItem,
+    quit: AppMenuItem,
+}
+
+#[derive(Clone, Copy)]
+enum LocaleCode {
+    ZhCn,
+    EnUs,
+}
+
+struct TrayTexts {
+    settings: &'static str,
+    pause: &'static str,
+    start: &'static str,
+    quit: &'static str,
 }
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const NUDGE_REPEAT_DELAY_MS: u64 = 250;
 const NUDGE_REPEAT_INTERVAL_MS: u64 = 40;
+const TRAY_ICON_ID: &str = "main";
+const TRAY_MENU_SETTINGS_ID: &str = "tray-settings";
+const TRAY_MENU_TOGGLE_ID: &str = "tray-toggle-runtime";
+const TRAY_MENU_QUIT_ID: &str = "tray-quit";
 
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
@@ -175,6 +211,110 @@ fn get_state_config(state: &AppState) -> Result<AppConfig, String> {
         .lock()
         .map(|guard| guard.clone())
         .map_err(|_| "config lock poisoned".to_string())
+}
+
+fn parse_locale(value: &str) -> Option<LocaleCode> {
+    match value {
+        "zh-CN" => Some(LocaleCode::ZhCn),
+        "en-US" => Some(LocaleCode::EnUs),
+        _ => None,
+    }
+}
+
+fn normalize_locale(value: &str) -> LocaleCode {
+    parse_locale(value).unwrap_or(LocaleCode::ZhCn)
+}
+
+fn locale_value(locale: LocaleCode) -> &'static str {
+    match locale {
+        LocaleCode::ZhCn => "zh-CN",
+        LocaleCode::EnUs => "en-US",
+    }
+}
+
+fn tray_texts(locale: LocaleCode) -> TrayTexts {
+    match locale {
+        LocaleCode::ZhCn => TrayTexts {
+            settings: "设置",
+            pause: "暂停",
+            start: "启动",
+            quit: "退出",
+        },
+        LocaleCode::EnUs => TrayTexts {
+            settings: "Settings",
+            pause: "Pause",
+            start: "Start",
+            quit: "Quit",
+        },
+    }
+}
+
+fn is_paused(state: &AppState) -> bool {
+    state.paused.lock().map(|guard| *guard).unwrap_or(false)
+}
+
+fn locale_from_config(config: &AppConfig) -> LocaleCode {
+    normalize_locale(&config.app.locale)
+}
+
+fn show_settings_from_tray(app: &AppHandle, _state: &AppState) {
+    show_settings(app);
+}
+
+fn refresh_tray(app: &AppHandle, state: &AppState) {
+    let config = get_state_config(state).unwrap_or_else(|_| default_config());
+    let texts = tray_texts(locale_from_config(&config));
+    let paused = is_paused(state);
+
+    if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
+        let _ = tray.set_visible(config.app.tray.enabled);
+    }
+
+    if let Ok(guard) = state.tray_menu_items.lock() {
+        if let Some(items) = guard.as_ref() {
+            let _ = items.settings.set_text(texts.settings);
+            let _ = items.settings.set_enabled(true);
+            let _ = items
+                .toggle_runtime
+                .set_text(if paused { texts.start } else { texts.pause });
+            let _ = items.quit.set_text(texts.quit);
+        }
+    }
+}
+
+fn set_paused(app: &AppHandle, state: &AppState, paused: bool) -> Result<(), String> {
+    let current = state
+        .paused
+        .lock()
+        .map(|guard| *guard)
+        .map_err(|_| "paused lock poisoned".to_string())?;
+    if current == paused {
+        return Ok(());
+    }
+
+    if paused {
+        hide_overlay(app, state);
+        unregister_activation_hotkeys(app, state)?;
+    } else {
+        let config = get_state_config(state)?;
+        register_activation_hotkeys(app, state, &config)?;
+    }
+
+    state
+        .paused
+        .lock()
+        .map(|mut guard| {
+            *guard = paused;
+        })
+        .map_err(|_| "paused lock poisoned".to_string())?;
+
+    refresh_tray(app, state);
+    Ok(())
+}
+
+fn toggle_paused(app: &AppHandle, state: &AppState) -> Result<(), String> {
+    let next = !is_paused(state);
+    set_paused(app, state, next)
 }
 
 fn validate_keys(keys: &[String], expected_len: usize, label: &str) -> Result<(), String> {
@@ -303,21 +443,30 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
 fn apply_config(
     app: AppHandle,
     state: State<'_, AppState>,
-    config: AppConfig,
+    mut config: AppConfig,
 ) -> Result<(), String> {
     println!("[config] apply_config called");
+    config.app.locale = locale_value(locale_from_config(&config)).to_string();
     validate_config(&config)?;
     set_state_config(state.inner(), config.clone())?;
-    register_activation_hotkeys(&app, state.inner(), &config)?;
+    let paused = is_paused(state.inner());
+    if paused {
+        unregister_activation_hotkeys(&app, state.inner())?;
+    } else {
+        register_activation_hotkeys(&app, state.inner(), &config)?;
+    }
     let overlay_active = state
         .overlay_active
         .lock()
         .map(|guard| *guard)
         .unwrap_or(false);
-    if overlay_active {
+    if overlay_active && !paused {
         register_overlay_hotkeys(&app, state.inner(), &config)?;
+    } else if overlay_active {
+        hide_overlay(&app, state.inner());
     }
     persist_config(&app, &config)?;
+    refresh_tray(&app, state.inner());
     Ok(())
 }
 
@@ -330,17 +479,35 @@ fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
 fn reset_config(app: AppHandle, state: State<'_, AppState>) -> Result<AppConfig, String> {
     let config = default_config();
     set_state_config(state.inner(), config.clone())?;
-    register_activation_hotkeys(&app, state.inner(), &config)?;
+    let paused = is_paused(state.inner());
+    if paused {
+        unregister_activation_hotkeys(&app, state.inner())?;
+    } else {
+        register_activation_hotkeys(&app, state.inner(), &config)?;
+    }
     let overlay_active = state
         .overlay_active
         .lock()
         .map(|guard| *guard)
         .unwrap_or(false);
-    if overlay_active {
+    if overlay_active && !paused {
         register_overlay_hotkeys(&app, state.inner(), &config)?;
+    } else if overlay_active {
+        hide_overlay(&app, state.inner());
     }
     persist_config(&app, &config)?;
+    refresh_tray(&app, state.inner());
     Ok(config)
+}
+
+#[tauri::command]
+fn set_locale(app: AppHandle, state: State<'_, AppState>, locale: String) -> Result<(), String> {
+    let mut config = get_state_config(state.inner())?;
+    config.app.locale = locale_value(normalize_locale(&locale)).to_string();
+    set_state_config(state.inner(), config.clone())?;
+    persist_config(&app, &config)?;
+    refresh_tray(&app, state.inner());
+    Ok(())
 }
 
 #[tauri::command]
@@ -467,6 +634,8 @@ pub fn run() {
             overlay_click_action: Mutex::new(None),
             monitor_index: Mutex::new(0),
             nudge_repeat: Mutex::new(None),
+            paused: Mutex::new(false),
+            tray_menu_items: Mutex::new(None),
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(global_shortcut_plugin)
@@ -474,13 +643,13 @@ pub fn run() {
             apply_config,
             get_config,
             reset_config,
+            set_locale,
             native_click,
             close_overlay
         ])
         .setup(|app| {
             let handle = app.handle();
             create_overlay_window(&handle)?;
-            register_tray(&handle)?;
             let state = app.state::<AppState>();
             let (mut config, mut should_persist) = load_config(&handle);
             if let Err(err) = set_state_config(state.inner(), config.clone()) {
@@ -503,6 +672,8 @@ pub fn run() {
             if should_persist {
                 let _ = persist_config(&handle, &config);
             }
+            register_tray(&handle, state.inner())?;
+            refresh_tray(&handle, state.inner());
             println!("[startup] activation hotkeys registered");
             Ok(())
         })
@@ -510,16 +681,66 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-fn register_tray(app: &AppHandle) -> tauri::Result<()> {
-    let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
-    let settings_id = settings_item.id().clone();
-    let menu = Menu::with_items(app, &[&settings_item])?;
+fn register_tray(app: &AppHandle, state: &AppState) -> tauri::Result<()> {
+    let config = get_state_config(state).unwrap_or_else(|_| default_config());
+    let locale = locale_from_config(&config);
+    let texts = tray_texts(locale);
+    let paused = is_paused(state);
 
-    let mut builder = TrayIconBuilder::new()
+    let settings_item = MenuItem::with_id(
+        app,
+        TRAY_MENU_SETTINGS_ID,
+        texts.settings,
+        true,
+        None::<&str>,
+    )?;
+    let toggle_item = MenuItem::with_id(
+        app,
+        TRAY_MENU_TOGGLE_ID,
+        if paused { texts.start } else { texts.pause },
+        true,
+        None::<&str>,
+    )?;
+    let quit_item = MenuItem::with_id(app, TRAY_MENU_QUIT_ID, texts.quit, true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&settings_item, &toggle_item, &quit_item])?;
+
+    if let Ok(mut guard) = state.tray_menu_items.lock() {
+        *guard = Some(TrayMenuItems {
+            settings: settings_item.clone(),
+            toggle_runtime: toggle_item.clone(),
+            quit: quit_item.clone(),
+        });
+    }
+
+    let mut builder = TrayIconBuilder::with_id(TRAY_ICON_ID)
         .menu(&menu)
-        .on_menu_event(move |app, event| {
-            if event.id == settings_id {
-                show_settings(app);
+        .show_menu_on_left_click(false)
+        .on_menu_event(move |app, event| match event.id.as_ref() {
+            TRAY_MENU_SETTINGS_ID => {
+                let state = app.state::<AppState>();
+                show_settings_from_tray(app, state.inner());
+            }
+            TRAY_MENU_TOGGLE_ID => {
+                let state = app.state::<AppState>();
+                if let Err(err) = toggle_paused(app, state.inner()) {
+                    println!("[tray] failed to toggle pause state: {}", err);
+                }
+            }
+            TRAY_MENU_QUIT_ID => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button,
+                button_state,
+                ..
+            } = event
+            {
+                if button == TrayMouseButton::Left && button_state == TrayMouseButtonState::Up {
+                    let app = tray.app_handle();
+                    let state = app.state::<AppState>();
+                    show_settings_from_tray(app, state.inner());
+                }
             }
         });
 
@@ -527,12 +748,39 @@ fn register_tray(app: &AppHandle) -> tauri::Result<()> {
         builder = builder.icon(icon.clone());
     }
 
-    builder.build(app)?;
+    let tray = builder.build(app)?;
+    tray.set_visible(config.app.tray.enabled)?;
     Ok(())
 }
 
 fn show_settings(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    let maybe_conf = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "settings");
+
+    if let Some(conf) = maybe_conf {
+        if let Ok(window) =
+            WebviewWindowBuilder::from_config(app, conf).and_then(|builder| builder.build())
+        {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        return;
+    }
+
+    if let Ok(window) = WebviewWindowBuilder::new(app, "settings", WebviewUrl::default()).build() {
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
@@ -886,6 +1134,20 @@ fn register_activation_hotkeys(
     }
     println!("[hotkeys] activation registered");
 
+    Ok(())
+}
+
+fn unregister_activation_hotkeys(app: &AppHandle, state: &AppState) -> Result<(), String> {
+    let shortcut_manager = app.global_shortcut();
+    if let Ok(previous) = state.activation_shortcuts.lock().map(|guard| guard.clone()) {
+        if !previous.is_empty() {
+            let _ = shortcut_manager.unregister_multiple(previous);
+        }
+    }
+    if let Ok(mut guard) = state.activation_shortcuts.lock() {
+        guard.clear();
+    }
+    println!("[hotkeys] activation unregistered");
     Ok(())
 }
 
