@@ -1,6 +1,6 @@
 ﻿import type { AppConfig, Region } from "$lib/core";
 
-export type ClickAction = "left" | "right" | "middle";
+export type ClickAction = "left" | "right" | "middle" | "moveOnly" | "drag";
 
 export interface OverlayActivatePayload {
   region: Region;
@@ -10,6 +10,10 @@ export interface OverlayActivatePayload {
 
 export interface NativeKeyPayload {
   key: string;
+}
+
+export interface OverlayActionPayload {
+  clickAction: ClickAction;
 }
 
 export interface NativeClickPayload {

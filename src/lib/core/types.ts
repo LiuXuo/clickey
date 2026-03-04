@@ -45,14 +45,14 @@ export interface AppConfig {
   };
   hotkeys: {
     activation: {
-      leftClick: string;
-      rightClick: string;
-      middleClick: string;
+      trigger: string;
     };
     controls: {
       cancel: string;
       undo: string;
       directClick: string;
+      switchAction: string;
+      nextMonitor: string;
     };
   };
   nudge: {

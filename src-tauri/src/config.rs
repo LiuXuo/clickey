@@ -51,9 +51,7 @@ pub struct HotkeysConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActivationHotkeys {
-    pub left_click: String,
-    pub right_click: String,
-    pub middle_click: String,
+    pub trigger: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +60,8 @@ pub struct ControlHotkeys {
     pub cancel: String,
     pub undo: String,
     pub direct_click: String,
+    pub switch_action: String,
+    pub next_monitor: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

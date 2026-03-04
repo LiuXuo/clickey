@@ -11,14 +11,14 @@ function makeConfig(): AppConfig {
     },
     hotkeys: {
       activation: {
-        leftClick: "Ctrl+;",
-        rightClick: "Ctrl+Shift+;",
-        middleClick: "Ctrl+Shift+Alt+;",
+        trigger: "Ctrl+;",
       },
       controls: {
         cancel: "Esc",
         undo: "Backspace",
         directClick: "Space",
+        switchAction: "Enter",
+        nextMonitor: "Tab",
       },
     },
     nudge: {

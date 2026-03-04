@@ -3,8 +3,10 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { locale, t } from "$lib/i18n";
   import type {
     OverlayActivatePayload,
+    OverlayActionPayload,
     NativeKeyPayload,
     ClickAction,
   } from "$lib/ipc/types";
@@ -17,6 +19,23 @@
   let clickAction = $state<ClickAction | null>(null);
   let canvas: HTMLCanvasElement | null = null;
   const currentWindow = getCurrentWindow();
+
+  function actionLabel(action: ClickAction | null): string {
+    switch (action) {
+      case "left":
+        return $t("overlay.action.left");
+      case "right":
+        return $t("overlay.action.right");
+      case "middle":
+        return $t("overlay.action.middle");
+      case "moveOnly":
+        return $t("overlay.action.moveOnly");
+      case "drag":
+        return $t("overlay.action.drag");
+      default:
+        return $t("overlay.action.left");
+    }
+  }
 
   function getDisplayGrid(
     config: AppConfig,
@@ -185,12 +204,14 @@
 
   onMount(() => {
     let unlistenActivate: (() => void) | undefined;
+    let unlistenAction: (() => void) | undefined;
     let unlistenKey: (() => void) | undefined;
 
     void (async () => {
       unlistenActivate = await listen<OverlayActivatePayload>(
         "overlay:activate",
         (event) => {
+          locale.set(event.payload.config.app.locale);
           config = event.payload.config;
           baseRegion = event.payload.region;
           runtime = createInitialState(
@@ -199,6 +220,13 @@
           );
           clickAction = event.payload.clickAction ?? "left";
           draw();
+        },
+      );
+
+      unlistenAction = await listen<OverlayActionPayload>(
+        "overlay:action",
+        (event) => {
+          clickAction = event.payload.clickAction;
         },
       );
 
@@ -212,6 +240,7 @@
 
     return () => {
       unlistenActivate?.();
+      unlistenAction?.();
       unlistenKey?.();
       window.removeEventListener("resize", handleResize);
     };
@@ -219,6 +248,14 @@
 </script>
 
 <main>
+  {#if runtime}
+    <div class="action-hint">
+      {$t("overlay.actionHint", {
+        action: actionLabel(clickAction),
+        key: config?.hotkeys.controls.switchAction ?? "Enter",
+      })}
+    </div>
+  {/if}
   <canvas bind:this={canvas}></canvas>
 </main>
 
@@ -233,6 +270,22 @@
     position: fixed;
     inset: 0;
     pointer-events: none;
+  }
+
+  .action-hint {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 1;
+    padding: 4px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 9999px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    backdrop-filter: blur(4px);
   }
 
   canvas {

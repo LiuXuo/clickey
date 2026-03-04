@@ -31,16 +31,17 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 ### 1.1 通用交互（以 v3.1 为准）
 
-- 激活：`Ctrl+;`（左键） / `Ctrl+Shift+;`（右键） / `Ctrl+Shift+Alt+;`（中键）
+- 激活：`hotkeys.activation.trigger`（默认 `Ctrl+;`，进入 Overlay 时默认左键动作）
+- 切换动作：`hotkeys.controls.switchAction`（默认 `Enter`，循环：左键 -> 右键 -> 中键）
 - 取消：`Esc`（直接退出，不点击）
 - 回退：`Backspace`（撤销最近一次按键，恢复上一次 Region）
 - 直达：`Space`（直接点击当前 Region 中心点，跳过后续层级）
-- 切换显示器：`Tab`（多屏时）
+- 切换显示器：`hotkeys.controls.nextMonitor`（默认 `Tab`，多屏时）
 - 单键层微调：方向键（`Up/Down/Left/Right`，5px 步长，仅单键层）
 
 ### 1.2 坐标系与多显示器
 
-- v3.1 初始 Region 取当前显示器（`Monitor` 信息），多屏可用 `Tab` 轮换。
+- v3.1 初始 Region 取当前显示器（`Monitor` 信息），多屏可用 `hotkeys.controls.nextMonitor`（默认 `Tab`）轮换。
 - v1.x 使用 VirtualScreen（`SysGet` 76~79）作为初始 Region（历史参考）。
 - 所有裁剪都发生在“屏幕像素坐标”的 Region 上。
 - v3.1 的几何按原始像素绘制，字体按 DPI 缩放，减少多屏 DPI 偏移。
@@ -198,7 +199,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 补充：
 
 - 仅单键层支持方向键 5px 微调。
-- 多显示器可用 `Tab` 切换当前屏幕。
+- 多显示器可用 `hotkeys.controls.nextMonitor`（默认 `Tab`）切换当前屏幕。
 
 ### 5.3 v1.0（原 `clickey.ahk` → `demo/clickey_v1.0.ahk`）的“分层步骤表”（历史）
 
@@ -277,7 +278,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 边界与约束：
 
-- Core 不处理 `Tab`（切屏由 Native 重新触发 Overlay，并重置初始状态）
+- Core 不处理 `nextMonitor` 控制键（默认 `Tab`，切屏由 Native 重新触发 Overlay，并重置初始状态）
 - 只有成功裁剪才写入 `history`
 - 所有几何运算都在“屏幕像素坐标”中完成
 
@@ -300,14 +301,14 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
   },
   "hotkeys": {
     "activation": {
-      "leftClick": "Ctrl+;",
-      "rightClick": "Ctrl+Shift+;",
-      "middleClick": "Ctrl+Shift+Alt+;"
+      "trigger": "Ctrl+;"
     },
     "controls": {
       "cancel": "Esc",
       "undo": "Backspace",
-      "directClick": "Space"
+      "directClick": "Space",
+      "switchAction": "Enter",
+      "nextMonitor": "Tab"
     }
   },
   "nudge": {
@@ -478,3 +479,4 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - 2026-03-03：托盘交互改为“左键直开设置 + 右键菜单控制”；支持运行时暂停/启动热键并保持退出入口。
 - 2026-03-03：新增 `app.locale` 并打通 Settings 与 Rust 托盘联动，菜单文案随 i18n 实时刷新；设置窗口关闭后可由托盘自动重建打开。
 - 2026-03-04：移除预设模型（`activePresetId` / `presets[]`），统一为根级 `layers[]`；持久化改为 `AppConfig/settings.override.json`（仅记录与默认配置差异）；新增 override JSON 导入/导出链路。
+- 2026-03-04：热键模型收敛为单一激活键 `hotkeys.activation.trigger`（默认 `Ctrl+;`）；Overlay 动作切换改为 `hotkeys.controls.switchAction`（默认 `Enter`，循环左/右/中）；切屏改为 `hotkeys.controls.nextMonitor`（默认 `Tab`），两者均支持在 Settings 中自定义。

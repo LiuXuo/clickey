@@ -44,6 +44,8 @@ enum ClickAction {
     Left,
     Right,
     Middle,
+    MoveOnly,
+    Drag,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +70,12 @@ struct NativeKeyPayload {
     key: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OverlayActionPayload {
+    click_action: ClickAction,
+}
+
 #[derive(Debug, Clone)]
 struct NudgeRepeat {
     key: String,
@@ -76,31 +84,18 @@ struct NudgeRepeat {
 
 #[derive(Debug, Default, Clone)]
 struct ActivationHotkeyIds {
-    left: Option<u32>,
-    right: Option<u32>,
-    middle: Option<u32>,
+    trigger: Option<u32>,
 }
 
 impl ActivationHotkeyIds {
     fn from_config(config: &AppConfig) -> Self {
         Self {
-            left: parse_hotkey_id(&config.hotkeys.activation.left_click),
-            right: parse_hotkey_id(&config.hotkeys.activation.right_click),
-            middle: parse_hotkey_id(&config.hotkeys.activation.middle_click),
+            trigger: parse_hotkey_id(&config.hotkeys.activation.trigger),
         }
     }
 
-    fn action_for_id(&self, id: u32) -> Option<ClickAction> {
-        if self.left == Some(id) {
-            return Some(ClickAction::Left);
-        }
-        if self.right == Some(id) {
-            return Some(ClickAction::Right);
-        }
-        if self.middle == Some(id) {
-            return Some(ClickAction::Middle);
-        }
-        None
+    fn is_trigger_id(&self, id: u32) -> bool {
+        self.trigger == Some(id)
     }
 }
 
@@ -143,6 +138,8 @@ struct TrayTexts {
 const OVERRIDE_FILE_NAME: &str = "settings.override.json";
 const NUDGE_REPEAT_DELAY_MS: u64 = 250;
 const NUDGE_REPEAT_INTERVAL_MS: u64 = 40;
+const DEFAULT_SWITCH_ACTION_KEY: &str = "Enter";
+const DEFAULT_NEXT_MONITOR_KEY: &str = "Tab";
 const TRAY_ICON_ID: &str = "main";
 const TRAY_MENU_SETTINGS_ID: &str = "tray-settings";
 const TRAY_MENU_TOGGLE_ID: &str = "tray-toggle-runtime";
@@ -420,9 +417,7 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
         return Err("layers must not be empty".to_string());
     }
 
-    validate_hotkey(&config.hotkeys.activation.left_click, "leftClick")?;
-    validate_hotkey(&config.hotkeys.activation.right_click, "rightClick")?;
-    validate_hotkey(&config.hotkeys.activation.middle_click, "middleClick")?;
+    validate_hotkey(&config.hotkeys.activation.trigger, "trigger")?;
 
     if config.hotkeys.controls.cancel.trim().is_empty() {
         return Err("cancel hotkey is empty".to_string());
@@ -432,6 +427,12 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
     }
     if config.hotkeys.controls.direct_click.trim().is_empty() {
         return Err("directClick hotkey is empty".to_string());
+    }
+    if config.hotkeys.controls.switch_action.trim().is_empty() {
+        return Err("switchAction hotkey is empty".to_string());
+    }
+    if config.hotkeys.controls.next_monitor.trim().is_empty() {
+        return Err("nextMonitor hotkey is empty".to_string());
     }
 
     if config.nudge.step_px == 0 {
@@ -588,9 +589,9 @@ fn close_overlay(app: AppHandle, state: State<'_, AppState>) -> Result<(), Strin
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let default_cfg = default_config();
-    let _ = parse_shortcut_or_panic("leftClick", &default_cfg.hotkeys.activation.left_click);
-    let _ = parse_shortcut_or_panic("rightClick", &default_cfg.hotkeys.activation.right_click);
-    let _ = parse_shortcut_or_panic("middleClick", &default_cfg.hotkeys.activation.middle_click);
+    let _ = parse_shortcut_or_panic("trigger", &default_cfg.hotkeys.activation.trigger);
+    let _ = parse_shortcut_or_panic("switchAction", &default_cfg.hotkeys.controls.switch_action);
+    let _ = parse_shortcut_or_panic("nextMonitor", &default_cfg.hotkeys.controls.next_monitor);
     let activation_ids = ActivationHotkeyIds::from_config(&default_cfg);
 
     let global_shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
@@ -626,18 +627,18 @@ pub fn run() {
             }
             println!("[shortcut] pressed id={}", shortcut.id());
 
-            let action = {
+            let is_activation_trigger = {
                 let ids = state
                     .activation_ids
                     .lock()
                     .map(|guard| guard.clone())
                     .unwrap_or_default();
-                ids.action_for_id(shortcut.id())
+                ids.is_trigger_id(shortcut.id())
             };
 
-            if let Some(action) = action {
-                println!("[shortcut] activation action={:?}", action);
-                trigger_overlay(app, action);
+            if is_activation_trigger {
+                println!("[shortcut] activation trigger");
+                trigger_overlay(app, ClickAction::Left);
                 return;
             }
 
@@ -659,7 +660,26 @@ pub fn run() {
 
             if let Some(key) = overlay_key {
                 println!("[shortcut] overlay key={}", key);
-                if is_next_monitor_key(&key) {
+                let (switch_action_key, next_monitor_key) = state
+                    .config
+                    .lock()
+                    .map(|guard| {
+                        (
+                            guard.hotkeys.controls.switch_action.clone(),
+                            guard.hotkeys.controls.next_monitor.clone(),
+                        )
+                    })
+                    .unwrap_or_else(|_| {
+                        (
+                            DEFAULT_SWITCH_ACTION_KEY.to_string(),
+                            DEFAULT_NEXT_MONITOR_KEY.to_string(),
+                        )
+                    });
+                if is_switch_action_key(&key, &switch_action_key) {
+                    cycle_overlay_click_action(app, state.inner());
+                    return;
+                }
+                if is_next_monitor_key(&key, &next_monitor_key) {
                     switch_monitor(app);
                     return;
                 }
@@ -1073,13 +1093,22 @@ fn perform_click(payload: &NativeClickPayload) -> Result<(), String> {
     let y = payload.y.round() as i32;
     enigo.mouse_move_to(x, y);
 
-    let button = match payload.button {
-        ClickAction::Left => MouseButton::Left,
-        ClickAction::Right => MouseButton::Right,
-        ClickAction::Middle => MouseButton::Middle,
-    };
-    enigo.mouse_click(button);
-    Ok(())
+    match payload.button {
+        ClickAction::Left => {
+            enigo.mouse_click(MouseButton::Left);
+            Ok(())
+        }
+        ClickAction::Right => {
+            enigo.mouse_click(MouseButton::Right);
+            Ok(())
+        }
+        ClickAction::Middle => {
+            enigo.mouse_click(MouseButton::Middle);
+            Ok(())
+        }
+        ClickAction::MoveOnly => Ok(()),
+        ClickAction::Drag => Err("drag action is reserved and not implemented yet".to_string()),
+    }
 }
 
 // stub key sequence removed; we only advance on real input
@@ -1137,8 +1166,10 @@ fn collect_overlay_keys(config: &AppConfig) -> Vec<String> {
     keys.push(config.hotkeys.controls.cancel.clone());
     keys.push(config.hotkeys.controls.undo.clone());
     keys.push(config.hotkeys.controls.direct_click.clone());
+    keys.push(config.hotkeys.controls.switch_action.clone());
+    keys.push(config.hotkeys.controls.next_monitor.clone());
     keys.extend(
-        ["Tab", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]
+        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]
             .into_iter()
             .map(String::from),
     );
@@ -1155,21 +1186,9 @@ fn register_activation_hotkeys(
     state: &AppState,
     config: &AppConfig,
 ) -> Result<(), String> {
-    // ?????????????????
-    let mut shortcuts = Vec::new();
-    if let Some(shortcut) = parse_shortcut(&config.hotkeys.activation.left_click) {
-        shortcuts.push(shortcut);
-    }
-    if let Some(shortcut) = parse_shortcut(&config.hotkeys.activation.right_click) {
-        shortcuts.push(shortcut);
-    }
-    if let Some(shortcut) = parse_shortcut(&config.hotkeys.activation.middle_click) {
-        shortcuts.push(shortcut);
-    }
-
-    if shortcuts.is_empty() {
-        return Err("no valid activation hotkeys to register".to_string());
-    }
+    let shortcut = parse_shortcut(&config.hotkeys.activation.trigger)
+        .ok_or_else(|| "activation trigger is invalid".to_string())?;
+    let shortcuts = vec![shortcut];
 
     let shortcut_manager = app.global_shortcut();
     if let Ok(previous) = state.activation_shortcuts.lock().map(|guard| guard.clone()) {
@@ -1277,8 +1296,44 @@ fn unregister_overlay_hotkeys(app: &AppHandle, state: &AppState) -> Result<(), S
     Ok(())
 }
 
-fn is_next_monitor_key(value: &str) -> bool {
-    value.eq_ignore_ascii_case("tab")
+fn is_next_monitor_key(value: &str, configured_key: &str) -> bool {
+    value.eq_ignore_ascii_case(configured_key)
+}
+
+fn is_switch_action_key(value: &str, configured_key: &str) -> bool {
+    value.eq_ignore_ascii_case(configured_key)
+}
+
+fn next_cycle_click_action(current: ClickAction) -> ClickAction {
+    match current {
+        ClickAction::Left => ClickAction::Right,
+        ClickAction::Right => ClickAction::Middle,
+        ClickAction::Middle => ClickAction::Left,
+        ClickAction::MoveOnly => ClickAction::Left,
+        ClickAction::Drag => ClickAction::Left,
+    }
+}
+
+fn cycle_overlay_click_action(app: &AppHandle, state: &AppState) {
+    let next_action = {
+        let mut guard = match state.overlay_click_action.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        let current = guard.clone().unwrap_or(ClickAction::Left);
+        let next = next_cycle_click_action(current);
+        *guard = Some(next.clone());
+        next
+    };
+
+    println!("[overlay] action switched to {:?}", next_action);
+    let _ = app.emit_to(
+        EventTarget::webview_window("overlay"),
+        "overlay:action",
+        OverlayActionPayload {
+            click_action: next_action,
+        },
+    );
 }
 
 fn is_nudge_key(value: &str) -> bool {

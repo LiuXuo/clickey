@@ -352,14 +352,8 @@
       }
     });
 
-    if (!candidate.hotkeys.activation.leftClick.trim()) {
-      issues.push($t("errors.leftHotkeyEmpty"));
-    }
-    if (!candidate.hotkeys.activation.rightClick.trim()) {
-      issues.push($t("errors.rightHotkeyEmpty"));
-    }
-    if (!candidate.hotkeys.activation.middleClick.trim()) {
-      issues.push($t("errors.middleHotkeyEmpty"));
+    if (!candidate.hotkeys.activation.trigger.trim()) {
+      issues.push($t("errors.activationHotkeyEmpty"));
     }
     if (!candidate.hotkeys.controls.cancel.trim()) {
       issues.push($t("errors.cancelHotkeyEmpty"));
@@ -369,6 +363,12 @@
     }
     if (!candidate.hotkeys.controls.directClick.trim()) {
       issues.push($t("errors.directClickHotkeyEmpty"));
+    }
+    if (!candidate.hotkeys.controls.switchAction.trim()) {
+      issues.push($t("errors.switchActionHotkeyEmpty"));
+    }
+    if (!candidate.hotkeys.controls.nextMonitor.trim()) {
+      issues.push($t("errors.nextMonitorHotkeyEmpty"));
     }
     if (candidate.nudge.stepPx <= 0) {
       issues.push($t("errors.nudgeStep"));
@@ -893,35 +893,24 @@
 
       <div class="mt-6 grid gap-6 md:grid-cols-2">
         <div>
-          <label class="text-sm font-medium text-zinc-700" for="hotkey-left"
-            >{$t("hotkeys.leftClick")}</label
+          <label class="text-sm font-medium text-zinc-700" for="hotkey-trigger"
+            >{$t("hotkeys.trigger")}</label
           >
           <input
-            id="hotkey-left"
+            id="hotkey-trigger"
             class={fieldClass}
-            bind:value={config.hotkeys.activation.leftClick}
+            bind:value={config.hotkeys.activation.trigger}
             oninput={clearFeedback}
             disabled={isLoading}
           />
           <label
             class="mt-3 block text-sm font-medium text-zinc-700"
-            for="hotkey-right">{$t("hotkeys.rightClick")}</label
+            for="hotkey-switch-action">{$t("hotkeys.switchAction")}</label
           >
           <input
-            id="hotkey-right"
+            id="hotkey-switch-action"
             class={fieldClass}
-            bind:value={config.hotkeys.activation.rightClick}
-            oninput={clearFeedback}
-            disabled={isLoading}
-          />
-          <label
-            class="mt-3 block text-sm font-medium text-zinc-700"
-            for="hotkey-middle">{$t("hotkeys.middleClick")}</label
-          >
-          <input
-            id="hotkey-middle"
-            class={fieldClass}
-            bind:value={config.hotkeys.activation.middleClick}
+            bind:value={config.hotkeys.controls.switchAction}
             oninput={clearFeedback}
             disabled={isLoading}
           />
@@ -956,6 +945,17 @@
             id="hotkey-direct"
             class={fieldClass}
             bind:value={config.hotkeys.controls.directClick}
+            oninput={clearFeedback}
+            disabled={isLoading}
+          />
+          <label
+            class="mt-3 block text-sm font-medium text-zinc-700"
+            for="hotkey-next-monitor">{$t("hotkeys.nextMonitor")}</label
+          >
+          <input
+            id="hotkey-next-monitor"
+            class={fieldClass}
+            bind:value={config.hotkeys.controls.nextMonitor}
             oninput={clearFeedback}
             disabled={isLoading}
           />
