@@ -64,22 +64,22 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 ### 2.2.1 设置页（Settings WebView）
 
-除遮罩外，正式版本还会提供一个“设置页面”，它本质上是一个**普通 WebView 窗口**（可获取焦点、可交互），用于编辑配置与管理预设：
+除遮罩外，正式版本还会提供一个“设置页面”，它本质上是一个**普通 WebView 窗口**（可获取焦点、可交互），用于编辑配置：
 
 - 入口（当前实现）：
   - 托盘左键：直接打开设置页。
   - 托盘右键菜单：`设置 / 暂停(或启动) / 退出`。
   - 托盘菜单文案跟随 i18n（`zh-CN` / `en-US`）实时更新。
-- 职责：配置编辑、预设管理、导入导出、热键冲突提示等。
+- 职责：配置编辑、override JSON 导入导出、热键冲突提示等。
 - 边界：设置页不持有业务状态机；只读写配置并触发“应用配置”。
 
 当前实现（原型）已具备最小可用的表单化设置能力：
 
-- 预设管理：切换 / 复制 / 删除 / 重命名
 - Layer 编辑：增删 / 排序 / mode 切换（single/combo）/ rows/cols/keys 修改 / auto-fit
 - 热键编辑：activation + controls
 - Overlay 样式：alpha/line width/font size + color picker
-- Apply/Reset：应用并持久化 / 恢复默认配置（写入 AppConfig/config.json）
+- 导入/导出：override JSON（仅包含与默认配置不同字段）
+- Apply/Reset：应用并持久化 / 恢复默认配置（写入 AppConfig/settings.override.json）
 
 > 遮罩窗口（Overlay）与设置页（Settings）必须是两套不同的窗口策略：Overlay 必须 click-through/不抢焦点；Settings 必须可交互/可聚焦。
 
@@ -112,7 +112,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
    - 只根据 Runtime State 渲染：网格线、标签、高亮、层级提示
    - 不抢焦点、不读键盘、不修改状态
 3. **Settings UI（Svelte，普通 WebView）**
-   - 提供配置编辑器（表单/预设/导入导出）
+   - 提供配置编辑器（表单/layers/导入导出）
    - 只产出“配置变更事件”，不直接调用鼠标/热键等系统能力
 4. **Native Layer（Rust）**
    - 只做系统能力：监听全局热键、读屏幕/DPI/多显示器、执行鼠标移动与点击
@@ -128,7 +128,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - **Region**：当前可选区域（像素坐标）
   - `{ x, y, width, height }`
 - **Grid**：把 Region 切成 `rows x cols`
-- **Preset**：一个可命名的交互方案（包含一组 `layers`），由 Settings 维护与切换
+- **AppConfig**：单一运行配置对象（包含一组 `layers`），由 Settings 编辑并应用
 - **Layer**：一层交互（可能包含多步）
 - **Step**：一次按键输入（会把 Region 收缩一次）
 - **Mode**
@@ -233,7 +233,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 输入（概念）：
 
-- `AppConfig`：包含 `activePresetId` 与 `presets[]`
+- `AppConfig`：包含 `layers[]`、`hotkeys.controls`、`nudge.stepPx`
 - `initialRegion`：由 Native 提供的当前显示器 Region（像素坐标）
 - `key`：单次按键（已被 Native 转为字符串）
 
@@ -244,7 +244,6 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 状态字段（RuntimeState）：
 
-- `presetId`：当前使用的 preset
 - `layerIndex`：当前层索引
 - `stage`：`combo` 的阶段（0/1）
 - `region`：当前可选区域
@@ -255,29 +254,20 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 核心函数与行为：
 
 1. `createInitialState(config, initialRegion)`
-   - `presetId = config.activePresetId`
    - `layerIndex = 0`，`stage = 0`
    - `region = initialRegion`，`baseRegion = initialRegion`
-   - `history = []`，`done = false`
+   - `history = []`，`done = (config.layers.length === 0)`
 2. `getCurrentStep(config, state)`
-   - 找到当前 preset 与 layer
+   - 读取 `config.layers[state.layerIndex]` 作为当前 layer
    - `single`：返回 `{ rows, cols, keys }`
    - `combo`：`stage=0` 返回 `stage0`，`stage=1` 返回 `stage1`
 3. `applyKey(config, state, key)`
    - 若 `done=true`：不变更
    - 先做 key 归一化（大小写无关，支持 `Esc/Backspace/Space/Arrow*` 等别名）
-   - 控制键规则：
-     - `cancel(Esc)`：`done=true`，无 `clickPoint`
-     - `undo(Backspace)`：`history` 空则 `done=true`；否则弹栈并恢复 `region/layerIndex/stage`
-     - `directClick(Space)`：`done=true`，`clickPoint = center(region)`
-   - 方向键微调：
-     - 仅在 `single` 层生效
-     - 步长固定 5px，且必须被 `baseRegion` 夹紧
-   - 普通按键：
-     - 若不在 `keys` 中：不变更
-     - 若匹配：先把当前 `state` 快照入 `history`
-     - 计算 `cropRegion` 得到 `nextRegion`
-     - 按层推进（见下节），若完成则返回 `clickPoint = center(nextRegion)`
+   - 控制键来源于 `config.hotkeys.controls.*`（归一化后比较）
+   - 控制键规则：`cancel` 结束且不点击；`undo` 在 `history` 为空时结束，否则弹栈恢复 `region/layerIndex/stage`；`directClick` 直接返回 `clickPoint = center(region)` 并结束。
+   - 方向键微调：仅在 `single` 层生效；步长来自 `config.nudge.stepPx`（非法值回退到 5px），且必须被 `baseRegion` 夹紧。
+   - 普通按键：当前 `layer` 不存在时 `done=true`；不在 `keys` 中时不变更；匹配后先写入 `history`，再计算 `nextRegion` 并推进状态，若完成则返回 `clickPoint = center(nextRegion)`。
 
 状态推进规则：
 
@@ -323,79 +313,72 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
   "nudge": {
     "stepPx": 5
   },
-  "activePresetId": "v3.1-default",
-  "presets": [
+  "layers": [
     {
-      "id": "v3.1-default",
-      "name": "v3.1 (default)",
-      "layers": [
-        {
-          "mode": "combo",
-          "stage0": {
-            "rows": 1,
-            "cols": 15,
-            "keys": [
-              "q",
-              "a",
-              "z",
-              "w",
-              "s",
-              "x",
-              "e",
-              "d",
-              "c",
-              "r",
-              "f",
-              "v",
-              "t",
-              "g",
-              "b"
-            ]
-          },
-          "stage1": {
-            "rows": 15,
-            "cols": 1,
-            "keys": [
-              "y",
-              "h",
-              "n",
-              "u",
-              "j",
-              "m",
-              "i",
-              "k",
-              ",",
-              "o",
-              "l",
-              ".",
-              "p",
-              ";",
-              "/"
-            ]
-          }
-        },
-        {
-          "mode": "single",
-          "rows": 3,
-          "cols": 5,
-          "keys": [
-            "q",
-            "w",
-            "e",
-            "r",
-            "t",
-            "a",
-            "s",
-            "d",
-            "f",
-            "g",
-            "z",
-            "x",
-            "c",
-            "v",
-            "b"
-          ]
-        }
+      "mode": "combo",
+      "stage0": {
+        "rows": 1,
+        "cols": 15,
+        "keys": [
+          "q",
+          "a",
+          "z",
+          "w",
+          "s",
+          "x",
+          "e",
+          "d",
+          "c",
+          "r",
+          "f",
+          "v",
+          "t",
+          "g",
+          "b"
+        ]
+      },
+      "stage1": {
+        "rows": 15,
+        "cols": 1,
+        "keys": [
+          "y",
+          "h",
+          "n",
+          "u",
+          "j",
+          "m",
+          "i",
+          "k",
+          ",",
+          "o",
+          "l",
+          ".",
+          "p",
+          ";",
+          "/"
+        ]
+      }
+    },
+    {
+      "mode": "single",
+      "rows": 3,
+      "cols": 5,
+      "keys": [
+        "q",
+        "w",
+        "e",
+        "r",
+        "t",
+        "a",
+        "s",
+        "d",
+        "f",
+        "g",
+        "z",
+        "x",
+        "c",
+        "v",
+        "b"
       ]
     }
   ],
@@ -421,7 +404,8 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - Core Engine 只依赖配置与输入事件，不读取 OS。
 - **“设置页/托盘”也是配置入口的一部分**：Settings 只负责编辑配置与触发应用；不直接参与 Overlay 的事件循环。
 - 托盘菜单属于运行时 UI：文案必须与 `app.locale` 同步，交互与设置页行为保持一致。
-- **预设是定制化的单位**：Settings 管理 `presets[]` 与 `activePresetId`；Overlay 只消费“当前运行时配置”。
+- **层（`layers`）是定制化的单位**：Settings 直接编辑 `layers[]`；Overlay 只消费“当前运行时配置”。
+- **持久化采用 override JSON**：仅写入与默认配置不同字段（`AppConfig/settings.override.json`），支持导入/导出同结构 JSON。
 
 ---
 
@@ -463,7 +447,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - E3 遮罩窗口 PoC（透明/置顶/click-through/不抢焦点）
 - AHK 行为原型可运行（版本化；基准 v3.1）
 - 仓库文档收敛为 `README.md` + `AGENT.md`
-- Settings UI 原型完成（预设/层/热键/overlay 表单化 + 配置持久化）
+- Settings UI 原型完成（层/热键/overlay 表单化 + 配置持久化）
 - 托盘交互优化完成（左键打开设置；右键菜单“设置/暂停或启动/退出”；菜单文案随 i18n 实时更新）
 
 ---
@@ -493,3 +477,4 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - 2026-02-18：Settings UI 原型完成（预设/层/热键/overlay 表单化，支持增删排序、mode 切换、auto-fit、颜色拾取）；配置持久化链路就绪（get/apply/reset，写入 AppConfig/config.json）。
 - 2026-03-03：托盘交互改为“左键直开设置 + 右键菜单控制”；支持运行时暂停/启动热键并保持退出入口。
 - 2026-03-03：新增 `app.locale` 并打通 Settings 与 Rust 托盘联动，菜单文案随 i18n 实时刷新；设置窗口关闭后可由托盘自动重建打开。
+- 2026-03-04：移除预设模型（`activePresetId` / `presets[]`），统一为根级 `layers[]`；持久化改为 `AppConfig/settings.override.json`（仅记录与默认配置差异）；新增 override JSON 导入/导出链路。

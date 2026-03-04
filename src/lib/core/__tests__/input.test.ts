@@ -24,24 +24,17 @@ function makeConfig(): AppConfig {
     nudge: {
       stepPx: 5,
     },
-    activePresetId: "test",
-    presets: [
+    layers: [
       {
-        id: "test",
-        name: "test",
-        layers: [
-          {
-            mode: "combo",
-            stage0: { rows: 1, cols: 2, keys: ["a", "b"] },
-            stage1: { rows: 2, cols: 1, keys: ["c", "d"] },
-          },
-          {
-            mode: "single",
-            rows: 1,
-            cols: 2,
-            keys: ["e", "f"],
-          },
-        ],
+        mode: "combo",
+        stage0: { rows: 1, cols: 2, keys: ["a", "b"] },
+        stage1: { rows: 2, cols: 1, keys: ["c", "d"] },
+      },
+      {
+        mode: "single",
+        rows: 1,
+        cols: 2,
+        keys: ["e", "f"],
       },
     ],
     overlay: {

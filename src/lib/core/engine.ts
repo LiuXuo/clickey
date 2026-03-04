@@ -7,7 +7,6 @@
   GridStage,
   Layer,
   Point,
-  Preset,
   Region,
   RuntimeState,
   RuntimeSnapshot,
@@ -128,12 +127,11 @@ export function createInitialState(
   initialRegion: Region,
 ): RuntimeState {
   return {
-    presetId: config.activePresetId,
     layerIndex: 0,
     stage: 0,
     region: { ...initialRegion },
     baseRegion: { ...initialRegion },
-    done: false,
+    done: config.layers.length === 0,
     history: [],
   };
 }
@@ -195,12 +193,7 @@ export function applyKey(
     return { state: { ...state, region: nextRegion }, didAdvance: true };
   }
 
-  const preset = getPreset(config, state.presetId);
-  if (!preset) {
-    return { state, didAdvance: false };
-  }
-
-  const layer = preset.layers[state.layerIndex];
+  const layer = config.layers[state.layerIndex];
   if (!layer) {
     return { state: { ...state, done: true }, didAdvance: false };
   }
@@ -224,7 +217,13 @@ export function applyKey(
     keyIndex + 1,
   );
   const history = pushHistory(state);
-  const nextState = advanceState(state, preset, layer, nextRegion, history);
+  const nextState = advanceState(
+    state,
+    config.layers.length,
+    layer,
+    nextRegion,
+    history,
+  );
 
   if (nextState.done) {
     return {
@@ -241,12 +240,7 @@ export function getCurrentStep(
   config: AppConfig,
   state: RuntimeState,
 ): CurrentStep | null {
-  const preset = getPreset(config, state.presetId);
-  if (!preset) {
-    return null;
-  }
-
-  const layer = preset.layers[state.layerIndex];
+  const layer = config.layers[state.layerIndex];
   if (!layer) {
     return null;
   }
@@ -266,10 +260,6 @@ export function getCurrentStep(
   };
 }
 
-function getPreset(config: AppConfig, presetId: string): Preset | undefined {
-  return config.presets.find((candidate) => candidate.id === presetId);
-}
-
 function getStepForLayer(layer: Layer, stage: ComboStage): GridStage | null {
   if (layer.mode === "single") {
     return {
@@ -284,7 +274,7 @@ function getStepForLayer(layer: Layer, stage: ComboStage): GridStage | null {
 
 function advanceState(
   state: RuntimeState,
-  preset: Preset,
+  layersLength: number,
   layer: Layer,
   nextRegion: Region,
   history: RuntimeSnapshot[],
@@ -304,7 +294,7 @@ function advanceState(
     nextStage = 0;
   }
 
-  const done = nextLayerIndex >= preset.layers.length;
+  const done = nextLayerIndex >= layersLength;
 
   return {
     ...state,

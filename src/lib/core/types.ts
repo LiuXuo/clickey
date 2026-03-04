@@ -33,12 +33,6 @@ export interface ComboLayer {
 
 export type Layer = SingleLayer | ComboLayer;
 
-export interface Preset {
-  id: string;
-  name: string;
-  layers: Layer[];
-}
-
 export interface AppConfig {
   app: {
     locale: "zh-CN" | "en-US";
@@ -64,8 +58,7 @@ export interface AppConfig {
   nudge: {
     stepPx: number;
   };
-  activePresetId: string;
-  presets: Preset[];
+  layers: Layer[];
   overlay: {
     alpha: number;
     maskColor: string;
@@ -84,7 +77,6 @@ export interface AppConfig {
 export type ComboStage = 0 | 1;
 
 export interface RuntimeState {
-  presetId: string;
   layerIndex: number;
   stage: ComboStage;
   region: Region;

@@ -10,8 +10,7 @@ pub struct AppConfig {
     pub hotkeys: HotkeysConfig,
     #[serde(default)]
     pub nudge: NudgeConfig,
-    pub active_preset_id: String,
-    pub presets: Vec<Preset>,
+    pub layers: Vec<Layer>,
     pub overlay: OverlayConfig,
 }
 
@@ -75,14 +74,6 @@ impl Default for NudgeConfig {
     fn default() -> Self {
         Self { step_px: 5 }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Preset {
-    pub id: String,
-    pub name: String,
-    pub layers: Vec<Layer>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

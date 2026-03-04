@@ -3,9 +3,10 @@ mod config;
 use config::{default_config, AppConfig, Layer};
 use enigo::{Enigo, MouseButton, MouseControllable};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::{
     collections::{HashMap, HashSet},
-    fs,
+    fs, io,
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -139,7 +140,7 @@ struct TrayTexts {
     quit: &'static str,
 }
 
-const CONFIG_FILE_NAME: &str = "config.json";
+const OVERRIDE_FILE_NAME: &str = "settings.override.json";
 const NUDGE_REPEAT_DELAY_MS: u64 = 250;
 const NUDGE_REPEAT_INTERVAL_MS: u64 = 40;
 const TRAY_ICON_ID: &str = "main";
@@ -150,8 +151,67 @@ const TRAY_MENU_QUIT_ID: &str = "tray-quit";
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_config_dir()
-        .map(|dir| dir.join(CONFIG_FILE_NAME))
+        .map(|dir| dir.join(OVERRIDE_FILE_NAME))
         .map_err(|_| "unable to resolve app config directory".to_string())
+}
+
+fn diff_value(default: &Value, current: &Value) -> Option<Value> {
+    if default == current {
+        return None;
+    }
+
+    match (default, current) {
+        (Value::Object(default_map), Value::Object(current_map)) => {
+            let mut out = Map::new();
+            for (key, current_value) in current_map {
+                if let Some(default_value) = default_map.get(key) {
+                    if let Some(next) = diff_value(default_value, current_value) {
+                        out.insert(key.clone(), next);
+                    }
+                } else {
+                    out.insert(key.clone(), current_value.clone());
+                }
+            }
+            if out.is_empty() {
+                None
+            } else {
+                Some(Value::Object(out))
+            }
+        }
+        _ => Some(current.clone()),
+    }
+}
+
+fn merge_value(default: &Value, overrides: &Value) -> Value {
+    match (default, overrides) {
+        (Value::Object(default_map), Value::Object(override_map)) => {
+            let mut out = default_map.clone();
+            for (key, override_value) in override_map {
+                let merged = if let Some(default_value) = out.get(key) {
+                    merge_value(default_value, override_value)
+                } else {
+                    override_value.clone()
+                };
+                out.insert(key.clone(), merged);
+            }
+            Value::Object(out)
+        }
+        (_, override_leaf) => override_leaf.clone(),
+    }
+}
+
+fn build_overrides(config: &AppConfig) -> Result<Value, String> {
+    let default_value = serde_json::to_value(default_config()).map_err(|e| e.to_string())?;
+    let current_value = serde_json::to_value(config).map_err(|e| e.to_string())?;
+    Ok(diff_value(&default_value, &current_value).unwrap_or_else(|| Value::Object(Map::new())))
+}
+
+fn resolve_config_from_overrides(overrides: &Value) -> Result<AppConfig, String> {
+    let default_value = serde_json::to_value(default_config()).map_err(|e| e.to_string())?;
+    let resolved = merge_value(&default_value, overrides);
+    let config: AppConfig = serde_json::from_value(resolved).map_err(|e| e.to_string())?;
+    validate_config(&config)?;
+    Ok(config)
 }
 
 fn load_config(app: &AppHandle) -> (AppConfig, bool) {
@@ -164,20 +224,33 @@ fn load_config(app: &AppHandle) -> (AppConfig, bool) {
     };
 
     match fs::read_to_string(&path) {
-        Ok(contents) => match serde_json::from_str::<AppConfig>(&contents) {
-            Ok(config) => match validate_config(&config) {
-                Ok(()) => (config, false),
-                Err(err) => {
-                    println!("[config] invalid config file, using default: {}", err);
-                    (default_config(), true)
+        Ok(contents) => match serde_json::from_str::<Value>(&contents) {
+            Ok(overrides) => {
+                if !overrides.is_object() {
+                    println!("[config] override file must be a JSON object, using default");
+                    return (default_config(), true);
                 }
-            },
+                match resolve_config_from_overrides(&overrides) {
+                    Ok(config) => (config, false),
+                    Err(err) => {
+                        println!("[config] invalid override file, using default: {}", err);
+                        (default_config(), true)
+                    }
+                }
+            }
             Err(err) => {
-                println!("[config] invalid config file, using default: {}", err);
+                println!("[config] invalid override file, using default: {}", err);
                 (default_config(), true)
             }
         },
-        Err(_) => (default_config(), true),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => (default_config(), false),
+        Err(err) => {
+            println!(
+                "[config] failed to read override file, using default: {}",
+                err
+            );
+            (default_config(), true)
+        }
     }
 }
 
@@ -186,7 +259,8 @@ fn persist_config(app: &AppHandle, config: &AppConfig) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let payload = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
+    let overrides = build_overrides(config)?;
+    let payload = serde_json::to_string_pretty(&overrides).map_err(|e| e.to_string())?;
     fs::write(&path, payload).map_err(|e| e.to_string())
 }
 
@@ -342,8 +416,8 @@ fn validate_hotkey(value: &str, label: &str) -> Result<(), String> {
 }
 
 fn validate_config(config: &AppConfig) -> Result<(), String> {
-    if config.presets.is_empty() {
-        return Err("presets must not be empty".to_string());
+    if config.layers.is_empty() {
+        return Err("layers must not be empty".to_string());
     }
 
     validate_hotkey(&config.hotkeys.activation.left_click, "leftClick")?;
@@ -371,89 +445,60 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
         return Err("overlay font sizePx must be > 0".to_string());
     }
 
-    let mut preset_ids = HashSet::new();
-    for preset in &config.presets {
-        if preset.id.trim().is_empty() {
-            return Err("preset id must not be empty".to_string());
-        }
-        if !preset_ids.insert(preset.id.as_str()) {
-            return Err(format!("duplicate preset id: {}", preset.id));
-        }
-        if preset.layers.is_empty() {
-            return Err(format!("preset {} has no layers", preset.id));
-        }
-
-        for (layer_index, layer) in preset.layers.iter().enumerate() {
-            match layer {
-                Layer::Single { rows, cols, keys } => {
-                    if *rows == 0 || *cols == 0 {
-                        return Err(format!(
-                            "preset {} layer {} has invalid grid size",
-                            preset.id, layer_index
-                        ));
-                    }
-                    let expected_len = (*rows as usize) * (*cols as usize);
-                    validate_keys(
-                        keys,
-                        expected_len,
-                        &format!("preset {} layer {}", preset.id, layer_index),
-                    )?;
+    for (layer_index, layer) in config.layers.iter().enumerate() {
+        match layer {
+            Layer::Single { rows, cols, keys } => {
+                if *rows == 0 || *cols == 0 {
+                    return Err(format!("layer {} has invalid grid size", layer_index));
                 }
-                Layer::Combo { stage0, stage1 } => {
-                    if stage0.rows == 0 || stage0.cols == 0 {
-                        return Err(format!(
-                            "preset {} layer {} stage0 has invalid grid size",
-                            preset.id, layer_index
-                        ));
-                    }
-                    if stage1.rows == 0 || stage1.cols == 0 {
-                        return Err(format!(
-                            "preset {} layer {} stage1 has invalid grid size",
-                            preset.id, layer_index
-                        ));
-                    }
-                    let expected0 = (stage0.rows as usize) * (stage0.cols as usize);
-                    validate_keys(
-                        &stage0.keys,
-                        expected0,
-                        &format!("preset {} layer {} stage0", preset.id, layer_index),
-                    )?;
-                    let expected1 = (stage1.rows as usize) * (stage1.cols as usize);
-                    validate_keys(
-                        &stage1.keys,
-                        expected1,
-                        &format!("preset {} layer {} stage1", preset.id, layer_index),
-                    )?;
+                let expected_len = (*rows as usize) * (*cols as usize);
+                validate_keys(keys, expected_len, &format!("layer {}", layer_index))?;
+            }
+            Layer::Combo { stage0, stage1 } => {
+                if stage0.rows == 0 || stage0.cols == 0 {
+                    return Err(format!(
+                        "layer {} stage0 has invalid grid size",
+                        layer_index
+                    ));
                 }
+                if stage1.rows == 0 || stage1.cols == 0 {
+                    return Err(format!(
+                        "layer {} stage1 has invalid grid size",
+                        layer_index
+                    ));
+                }
+                let expected0 = (stage0.rows as usize) * (stage0.cols as usize);
+                validate_keys(
+                    &stage0.keys,
+                    expected0,
+                    &format!("layer {} stage0", layer_index),
+                )?;
+                let expected1 = (stage1.rows as usize) * (stage1.cols as usize);
+                validate_keys(
+                    &stage1.keys,
+                    expected1,
+                    &format!("layer {} stage1", layer_index),
+                )?;
             }
         }
-    }
-
-    if !preset_ids.contains(config.active_preset_id.as_str()) {
-        return Err(format!(
-            "activePresetId {} does not match any preset",
-            config.active_preset_id
-        ));
     }
 
     Ok(())
 }
 
-#[tauri::command]
-fn apply_config(
-    app: AppHandle,
-    state: State<'_, AppState>,
+fn apply_runtime_config(
+    app: &AppHandle,
+    state: &AppState,
     mut config: AppConfig,
-) -> Result<(), String> {
-    println!("[config] apply_config called");
+) -> Result<AppConfig, String> {
     config.app.locale = locale_value(locale_from_config(&config)).to_string();
     validate_config(&config)?;
-    set_state_config(state.inner(), config.clone())?;
-    let paused = is_paused(state.inner());
+    set_state_config(state, config.clone())?;
+    let paused = is_paused(state);
     if paused {
-        unregister_activation_hotkeys(&app, state.inner())?;
+        unregister_activation_hotkeys(app, state)?;
     } else {
-        register_activation_hotkeys(&app, state.inner(), &config)?;
+        register_activation_hotkeys(app, state, &config)?;
     }
     let overlay_active = state
         .overlay_active
@@ -461,12 +506,23 @@ fn apply_config(
         .map(|guard| *guard)
         .unwrap_or(false);
     if overlay_active && !paused {
-        register_overlay_hotkeys(&app, state.inner(), &config)?;
+        register_overlay_hotkeys(app, state, &config)?;
     } else if overlay_active {
-        hide_overlay(&app, state.inner());
+        hide_overlay(app, state);
     }
-    persist_config(&app, &config)?;
-    refresh_tray(&app, state.inner());
+    persist_config(app, &config)?;
+    refresh_tray(app, state);
+    Ok(config)
+}
+
+#[tauri::command]
+fn apply_config(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: AppConfig,
+) -> Result<(), String> {
+    println!("[config] apply_config called");
+    apply_runtime_config(&app, state.inner(), config)?;
     Ok(())
 }
 
@@ -477,27 +533,7 @@ fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
 
 #[tauri::command]
 fn reset_config(app: AppHandle, state: State<'_, AppState>) -> Result<AppConfig, String> {
-    let config = default_config();
-    set_state_config(state.inner(), config.clone())?;
-    let paused = is_paused(state.inner());
-    if paused {
-        unregister_activation_hotkeys(&app, state.inner())?;
-    } else {
-        register_activation_hotkeys(&app, state.inner(), &config)?;
-    }
-    let overlay_active = state
-        .overlay_active
-        .lock()
-        .map(|guard| *guard)
-        .unwrap_or(false);
-    if overlay_active && !paused {
-        register_overlay_hotkeys(&app, state.inner(), &config)?;
-    } else if overlay_active {
-        hide_overlay(&app, state.inner());
-    }
-    persist_config(&app, &config)?;
-    refresh_tray(&app, state.inner());
-    Ok(config)
+    apply_runtime_config(&app, state.inner(), default_config())
 }
 
 #[tauri::command]
@@ -508,6 +544,27 @@ fn set_locale(app: AppHandle, state: State<'_, AppState>, locale: String) -> Res
     persist_config(&app, &config)?;
     refresh_tray(&app, state.inner());
     Ok(())
+}
+
+#[tauri::command]
+fn export_override_json(state: State<'_, AppState>) -> Result<String, String> {
+    let config = get_state_config(state.inner())?;
+    let overrides = build_overrides(&config)?;
+    serde_json::to_string_pretty(&overrides).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_override_json(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    json: String,
+) -> Result<AppConfig, String> {
+    let overrides: Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    if !overrides.is_object() {
+        return Err("override JSON must be an object".to_string());
+    }
+    let config = resolve_config_from_overrides(&overrides)?;
+    apply_runtime_config(&app, state.inner(), config)
 }
 
 #[tauri::command]
@@ -644,6 +701,8 @@ pub fn run() {
             get_config,
             reset_config,
             set_locale,
+            export_override_json,
+            import_override_json,
             native_click,
             close_overlay
         ])
@@ -1060,23 +1119,17 @@ fn compute_virtual_region(app: &AppHandle) -> Region {
 }
 
 fn collect_overlay_keys(config: &AppConfig) -> Vec<String> {
-    let preset = config
-        .presets
-        .iter()
-        .find(|candidate| candidate.id == config.active_preset_id);
     let mut keys = Vec::new();
-    if let Some(preset) = preset {
-        for layer in &preset.layers {
-            match layer {
-                Layer::Single {
-                    keys: layer_keys, ..
-                } => {
-                    keys.extend(layer_keys.iter().cloned());
-                }
-                Layer::Combo { stage0, stage1 } => {
-                    keys.extend(stage0.keys.iter().cloned());
-                    keys.extend(stage1.keys.iter().cloned());
-                }
+    for layer in &config.layers {
+        match layer {
+            Layer::Single {
+                keys: layer_keys, ..
+            } => {
+                keys.extend(layer_keys.iter().cloned());
+            }
+            Layer::Combo { stage0, stage1 } => {
+                keys.extend(stage0.keys.iter().cloned());
+                keys.extend(stage1.keys.iter().cloned());
             }
         }
     }

@@ -23,79 +23,72 @@
   "nudge": {
     "stepPx": 5
   },
-  "activePresetId": "v3.1-default",
-  "presets": [
+  "layers": [
     {
-      "id": "v3.1-default",
-      "name": "v3.1 (default)",
-      "layers": [
-        {
-          "mode": "combo",
-          "stage0": {
-            "rows": 1,
-            "cols": 15,
-            "keys": [
-              "q",
-              "a",
-              "z",
-              "w",
-              "s",
-              "x",
-              "e",
-              "d",
-              "c",
-              "r",
-              "f",
-              "v",
-              "t",
-              "g",
-              "b"
-            ]
-          },
-          "stage1": {
-            "rows": 15,
-            "cols": 1,
-            "keys": [
-              "y",
-              "h",
-              "n",
-              "u",
-              "j",
-              "m",
-              "i",
-              "k",
-              ",",
-              "o",
-              "l",
-              ".",
-              "p",
-              ";",
-              "/"
-            ]
-          }
-        },
-        {
-          "mode": "single",
-          "rows": 3,
-          "cols": 5,
-          "keys": [
-            "q",
-            "w",
-            "e",
-            "r",
-            "t",
-            "a",
-            "s",
-            "d",
-            "f",
-            "g",
-            "z",
-            "x",
-            "c",
-            "v",
-            "b"
-          ]
-        }
+      "mode": "combo",
+      "stage0": {
+        "rows": 1,
+        "cols": 15,
+        "keys": [
+          "q",
+          "a",
+          "z",
+          "w",
+          "s",
+          "x",
+          "e",
+          "d",
+          "c",
+          "r",
+          "f",
+          "v",
+          "t",
+          "g",
+          "b"
+        ]
+      },
+      "stage1": {
+        "rows": 15,
+        "cols": 1,
+        "keys": [
+          "y",
+          "h",
+          "n",
+          "u",
+          "j",
+          "m",
+          "i",
+          "k",
+          ",",
+          "o",
+          "l",
+          ".",
+          "p",
+          ";",
+          "/"
+        ]
+      }
+    },
+    {
+      "mode": "single",
+      "rows": 3,
+      "cols": 5,
+      "keys": [
+        "q",
+        "w",
+        "e",
+        "r",
+        "t",
+        "a",
+        "s",
+        "d",
+        "f",
+        "g",
+        "z",
+        "x",
+        "c",
+        "v",
+        "b"
       ]
     }
   ],

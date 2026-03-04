@@ -27,10 +27,7 @@
       return { rows: step.rows, cols: step.cols, keys: step.keys };
     }
 
-    const preset = config.presets.find(
-      (candidate) => candidate.id === runtime.presetId,
-    );
-    const layer = preset?.layers[runtime.layerIndex];
+    const layer = config.layers[runtime.layerIndex];
     if (!layer || layer.mode !== "combo") {
       return { rows: step.rows, cols: step.cols, keys: step.keys };
     }
