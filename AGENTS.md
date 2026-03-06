@@ -4,7 +4,7 @@
 
 ## 强约束（非常重要）
 
-1. **本仓库只维护两份文档**：`README.md`（人类）与 `AGENT.md`（智能体）。
+1. **本仓库只维护两份文档**：`README.md`（人类）与 `AGENTS.md`（智能体）。
    - 不要新增 `docs/`、`ROADMAP.md`、`CHECKLIST.md`、看板/验收/任务拆分等散落文档。
    - 需要新增说明时：优先更新本文件相应章节。
 2. **架构边界不可打破**：核心逻辑平台无关；原生层最小化；遮罩渲染不抢焦点、不读键盘。
@@ -18,18 +18,18 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 ---
 
-## 1. 现状与原型真相（不要凭空改交互）
+## 1. 历史原型归档（仅参考，不再作为基准）
 
-当前行为基准来自 `demo/` 下的版本化 AutoHotkey v1 原型脚本（它们是事实标准）：
+`demo/` 下保留了版本化 AutoHotkey v1 脚本，用于历史回溯与行为对照；它们**不再**是当前实现的事实标准：
 
 - `demo/clickey_v1.0.ahk`：原 `clickey.ahk`，3x3 方案（多层、键位少）
 - `demo/clickey_v1.1.ahk`：原 `clickeyy.ahk`，5x5 方案（层数少、定位更细）
 - `demo/clickey_v2.x.ahk` / `demo/clickey_v3.x.ahk`：后续迭代
-- **当前基准**：`demo/clickey_v3.1.ahk`（后续工作以此为准）
+- **冻结版本**：`demo/clickey_v3.1.ahk`（此后不再迭代）
 
-完整版本说明见 `demo/clickey.md`。
+完整版本说明见 `demo/clickey.md`。当前项目后续迭代以仓库内 Tauri + Rust + Svelte 代码和默认配置为唯一事实来源。
 
-### 1.1 通用交互（以 v3.1 为准）
+### 1.1 通用交互（以当前默认配置为准）
 
 - 激活：`hotkeys.activation.trigger`（默认 `Ctrl+;`，进入 Overlay 时默认左键动作）
 - 切换动作：`hotkeys.controls.switchAction`（默认 `Enter`，循环：左键 -> 右键 -> 中键）
@@ -39,9 +39,9 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - 切换显示器：`hotkeys.controls.nextMonitor`（默认 `Tab`，多屏时）
 - 单键层微调：方向键（`Up/Down/Left/Right`，5px 步长，仅单键层）
 
-### 1.2 坐标系与多显示器
+### 1.2 坐标系与多显示器（当前实现）
 
-- v3.1 初始 Region 取当前显示器（`Monitor` 信息），多屏可用 `hotkeys.controls.nextMonitor`（默认 `Tab`）轮换。
+- 当前实现初始 Region 取当前显示器（`Monitor` 信息），多屏可用 `hotkeys.controls.nextMonitor`（默认 `Tab`）轮换。
 - v1.x 使用 VirtualScreen（`SysGet` 76~79）作为初始 Region（历史参考）。
 - 所有裁剪都发生在“屏幕像素坐标”的 Region 上。
 - v3.1 的几何按原始像素绘制，字体按 DPI 缩放，减少多屏 DPI 偏移。
@@ -78,6 +78,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 - Layer 编辑：增删 / 排序 / mode 切换（single/combo）/ rows/cols/keys 修改 / auto-fit
 - 热键编辑：activation + controls
+- 鼠标行为配置：平滑移动、按压时长、落点随机、速度随机、曲率/抖动、远距离提速与步进策略
 - Overlay 样式：alpha/line width/font size + color picker
 - 导入/导出：override JSON（仅包含与默认配置不同字段）
 - Apply/Reset：应用并持久化 / 恢复默认配置（写入 AppConfig/settings.override.json）
@@ -168,7 +169,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - `centerX = round(x + width / 2)`
 - `centerY = round(y + height / 2)`
 
-### 5.2 v3.1 基准的“分层步骤表”（当前事实标准）
+### 5.2 默认分层步骤表（历史源于 v3.1）
 
 键位（固定顺序先列后行）：
 
@@ -314,6 +315,27 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
   "nudge": {
     "stepPx": 5
   },
+  "mouse": {
+    "smoothMove": true,
+    "moveDurationMs": 120,
+    "moveStepMs": 8,
+    "pressDurationMs": 24,
+    "landingRadiusPx": 1,
+    "durationRandomness": 0.24,
+    "stepRandomness": 0.22,
+    "distanceBoostPx": 1800,
+    "durationDistanceBoost": 0.28,
+    "stepDistanceBoost": 0.42,
+    "curveAlongRatio": 0.08,
+    "curveSpreadRatio": 0.12,
+    "jitterRatio": 0.01,
+    "adaptiveStrideBasePx": 7,
+    "adaptiveStrideDistanceRatio": 0.026,
+    "adaptiveStrideMaxPx": 42,
+    "extraStepsMax": 6,
+    "maxSteps": 220,
+    "maxStepSleepMs": 24
+  },
   "layers": [
     {
       "mode": "combo",
@@ -406,6 +428,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - **“设置页/托盘”也是配置入口的一部分**：Settings 只负责编辑配置与触发应用；不直接参与 Overlay 的事件循环。
 - 托盘菜单属于运行时 UI：文案必须与 `app.locale` 同步，交互与设置页行为保持一致。
 - **层（`layers`）是定制化的单位**：Settings 直接编辑 `layers[]`；Overlay 只消费“当前运行时配置”。
+- **鼠标策略（`mouse.*`）也是运行时配置的一部分**：不得在 Rust 中硬编码轨迹参数；行为必须由配置驱动并可通过 Settings 调整。
 - **持久化采用 override JSON**：仅写入与默认配置不同字段（`AppConfig/settings.override.json`），支持导入/导出同结构 JSON。
 
 ---
@@ -446,10 +469,11 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - E0.1 明确 MVP 边界（以 v3.1 作为默认运行基准，先不考虑历史预设）
 - E1 初始化 Tauri + Svelte + TS 工程骨架（空壳可跑）
 - E3 遮罩窗口 PoC（透明/置顶/click-through/不抢焦点）
-- AHK 行为原型可运行（版本化；基准 v3.1）
-- 仓库文档收敛为 `README.md` + `AGENT.md`
+- AHK 历史原型归档可用（版本化；冻结于 v3.1）
+- 仓库文档收敛为 `README.md` + `AGENTS.md`
 - Settings UI 原型完成（层/热键/overlay 表单化 + 配置持久化）
 - 托盘交互优化完成（左键打开设置；右键菜单“设置/暂停或启动/退出”；菜单文案随 i18n 实时更新）
+- 鼠标行为配置化完成（`mouse.*` 全量参数接入 Settings，Native 轨迹/落点/随机策略改为配置驱动）
 
 ---
 
@@ -457,8 +481,8 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 每次交付（哪怕只是文档）都按以下顺序自检：
 
-1. **一致性**：README 与 AGENT 的说法不矛盾；术语统一；交互不偏离 AHK 原型。
-2. **可执行**：新人能按 README 跑起 AHK 演示；智能体能按 AGENT 找到下一步。
+1. **一致性**：README 与 AGENT 的说法不矛盾；术语统一；交互与当前实现/默认配置一致。
+2. **可执行**：新人能按 README 跑起当前 Tauri 项目；智能体能按 AGENT 找到下一步。
 3. **边界清晰**：Core/Native/UI 的职责没有混写。
 4. **可回滚**：改动集中、容易 review；不要一次把仓库“重构式大改”。
 
@@ -468,7 +492,7 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 
 > 目的：让后续Agent知道“为什么这么做”，避免反复在同一问题上打转。
 
-- 2026-02-10：将文档收敛为两份：`README.md`（人类）与 `AGENT.md`（智能体）。
+- 2026-02-10：将文档收敛为两份：`README.md`（人类）与 `AGENTS.md`（智能体）。
 - 2026-02-10: Initialized Tauri v2 + Svelte/TS skeleton; tray menu, overlay PoC, core engine unit test.
 - 2026-02-17：AHK 原型版本化（v1.0/v1.1 对应原脚本），基准更新为 `demo/clickey_v3.1.ahk`，文档同步。
 - 2026-02-17：MVP 边界确认：以 v3.1 作为默认运行基准，先不考虑历史预设。
@@ -480,3 +504,6 @@ Clickey 是一个“键盘驱动的分层网格定位”工具：热键激活全
 - 2026-03-03：新增 `app.locale` 并打通 Settings 与 Rust 托盘联动，菜单文案随 i18n 实时刷新；设置窗口关闭后可由托盘自动重建打开。
 - 2026-03-04：移除预设模型（`activePresetId` / `presets[]`），统一为根级 `layers[]`；持久化改为 `AppConfig/settings.override.json`（仅记录与默认配置差异）；新增 override JSON 导入/导出链路。
 - 2026-03-04：热键模型收敛为单一激活键 `hotkeys.activation.trigger`（默认 `Ctrl+;`）；Overlay 动作切换改为 `hotkeys.controls.switchAction`（默认 `Enter`，循环左/右/中）；切屏改为 `hotkeys.controls.nextMonitor`（默认 `Tab`），两者均支持在 Settings 中自定义。
+- 2026-03-06：新增 `mouse` 配置分组（含落点随机、速度随机、曲率/抖动、远距离提速、自适应步进等参数），默认配置、前端类型、Rust 结构体与校验规则同步更新。
+- 2026-03-06：Settings 页面新增“鼠标行为”分组；Native 点击日志补充 `requested_x/y` 与 `landing + offset_x/y`，用于验证随机落点与执行路径。
+- 2026-03-06：项目主线与 AHK demo 脚本正式解耦；AHK 冻结于 `demo/clickey_v3.1.ahk`，后续不再迭代，当前行为以仓库内实现与默认配置为准。
