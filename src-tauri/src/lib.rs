@@ -1,6 +1,6 @@
 mod config;
 
-use config::{default_config, AppConfig, Layer};
+use config::{default_config, AppConfig, Layer, MouseConfig};
 use enigo::{Enigo, MouseButton, MouseControllable};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -12,7 +12,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
     menu::Menu,
@@ -438,6 +438,76 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
     if config.nudge.step_px == 0 {
         return Err("nudge stepPx must be > 0".to_string());
     }
+    if config.mouse.move_duration_ms == 0 {
+        return Err("mouse moveDurationMs must be > 0".to_string());
+    }
+    if config.mouse.move_step_ms == 0 {
+        return Err("mouse moveStepMs must be > 0".to_string());
+    }
+    if !config.mouse.duration_randomness.is_finite()
+        || config.mouse.duration_randomness < 0.0
+        || config.mouse.duration_randomness >= 1.0
+    {
+        return Err("mouse durationRandomness must be in [0, 1)".to_string());
+    }
+    if !config.mouse.step_randomness.is_finite()
+        || config.mouse.step_randomness < 0.0
+        || config.mouse.step_randomness >= 1.0
+    {
+        return Err("mouse stepRandomness must be in [0, 1)".to_string());
+    }
+    if !config.mouse.distance_boost_px.is_finite() || config.mouse.distance_boost_px <= 0.0 {
+        return Err("mouse distanceBoostPx must be > 0".to_string());
+    }
+    if !config.mouse.duration_distance_boost.is_finite()
+        || config.mouse.duration_distance_boost < 0.0
+        || config.mouse.duration_distance_boost >= 1.0
+    {
+        return Err("mouse durationDistanceBoost must be in [0, 1)".to_string());
+    }
+    if !config.mouse.step_distance_boost.is_finite()
+        || config.mouse.step_distance_boost < 0.0
+        || config.mouse.step_distance_boost >= 1.0
+    {
+        return Err("mouse stepDistanceBoost must be in [0, 1)".to_string());
+    }
+    if !config.mouse.curve_along_ratio.is_finite()
+        || config.mouse.curve_along_ratio < 0.0
+        || config.mouse.curve_along_ratio > 1.0
+    {
+        return Err("mouse curveAlongRatio must be in [0, 1]".to_string());
+    }
+    if !config.mouse.curve_spread_ratio.is_finite()
+        || config.mouse.curve_spread_ratio < 0.0
+        || config.mouse.curve_spread_ratio > 1.0
+    {
+        return Err("mouse curveSpreadRatio must be in [0, 1]".to_string());
+    }
+    if !config.mouse.jitter_ratio.is_finite()
+        || config.mouse.jitter_ratio < 0.0
+        || config.mouse.jitter_ratio > 0.2
+    {
+        return Err("mouse jitterRatio must be in [0, 0.2]".to_string());
+    }
+    if !config.mouse.adaptive_stride_base_px.is_finite() || config.mouse.adaptive_stride_base_px <= 0.0 {
+        return Err("mouse adaptiveStrideBasePx must be > 0".to_string());
+    }
+    if !config.mouse.adaptive_stride_distance_ratio.is_finite()
+        || config.mouse.adaptive_stride_distance_ratio < 0.0
+    {
+        return Err("mouse adaptiveStrideDistanceRatio must be >= 0".to_string());
+    }
+    if !config.mouse.adaptive_stride_max_px.is_finite()
+        || config.mouse.adaptive_stride_max_px < config.mouse.adaptive_stride_base_px
+    {
+        return Err("mouse adaptiveStrideMaxPx must be >= adaptiveStrideBasePx".to_string());
+    }
+    if config.mouse.max_steps < 2 {
+        return Err("mouse maxSteps must be >= 2".to_string());
+    }
+    if config.mouse.max_step_sleep_ms == 0 {
+        return Err("mouse maxStepSleepMs must be > 0".to_string());
+    }
 
     if config.overlay.line_width_px == 0 {
         return Err("overlay lineWidthPx must be > 0".to_string());
@@ -571,10 +641,10 @@ fn import_override_json(
 #[tauri::command]
 fn native_click(app: AppHandle, payload: NativeClickPayload) -> Result<(), String> {
     println!(
-        "[native] click action={:?} x={} y={}",
+        "[native] click action={:?} requested_x={} requested_y={}",
         payload.button, payload.x, payload.y
     );
-    perform_click(&payload)?;
+    perform_click(&app, &payload)?;
     hide_overlay(&app, app.state::<AppState>().inner());
 
     Ok(())
@@ -1087,28 +1157,275 @@ fn hide_overlay(app: &AppHandle, state: &AppState) {
     println!("[overlay] hidden");
 }
 
-fn perform_click(payload: &NativeClickPayload) -> Result<(), String> {
+fn perform_click(app: &AppHandle, payload: &NativeClickPayload) -> Result<(), String> {
+    let config = get_state_config(app.state::<AppState>().inner())?;
+    let mouse_cfg = config.mouse;
+
     let mut enigo = Enigo::new();
-    let x = payload.x.round() as i32;
-    let y = payload.y.round() as i32;
-    enigo.mouse_move_to(x, y);
+    let base_x = payload.x.round() as i32;
+    let base_y = payload.y.round() as i32;
+    let (target_x, target_y) =
+        resolve_landing_point(base_x, base_y, &payload.button, &mouse_cfg);
+    println!(
+        "[native] landing action={:?} x={} y={} offset_x={} offset_y={}",
+        payload.button,
+        target_x,
+        target_y,
+        target_x - base_x,
+        target_y - base_y
+    );
+    move_mouse_to_target(&mut enigo, target_x, target_y, &mouse_cfg);
 
     match payload.button {
         ClickAction::Left => {
-            enigo.mouse_click(MouseButton::Left);
+            click_mouse_button(&mut enigo, MouseButton::Left, mouse_cfg.press_duration_ms);
             Ok(())
         }
         ClickAction::Right => {
-            enigo.mouse_click(MouseButton::Right);
+            click_mouse_button(&mut enigo, MouseButton::Right, mouse_cfg.press_duration_ms);
             Ok(())
         }
         ClickAction::Middle => {
-            enigo.mouse_click(MouseButton::Middle);
+            click_mouse_button(&mut enigo, MouseButton::Middle, mouse_cfg.press_duration_ms);
             Ok(())
         }
         ClickAction::MoveOnly => Ok(()),
         ClickAction::Drag => Err("drag action is reserved and not implemented yet".to_string()),
     }
+}
+
+fn resolve_landing_point(
+    base_x: i32,
+    base_y: i32,
+    button: &ClickAction,
+    cfg: &MouseConfig,
+) -> (i32, i32) {
+    if !matches!(
+        button,
+        ClickAction::Left | ClickAction::Right | ClickAction::Middle
+    ) {
+        return (base_x, base_y);
+    }
+
+    let radius = (cfg.landing_radius_px.min(i32::MAX as u32)) as i32;
+    if radius <= 0 {
+        return (base_x, base_y);
+    }
+
+    // Randomize to a centered square: offsets in [-radius, radius].
+    let mut rng = FastRng::new(seed_for_landing(base_x, base_y));
+    let offset_x = rng.range_i32_inclusive(-radius, radius);
+    let offset_y = rng.range_i32_inclusive(-radius, radius);
+    (
+        base_x.saturating_add(offset_x),
+        base_y.saturating_add(offset_y),
+    )
+}
+
+fn move_mouse_to_target(enigo: &mut Enigo, target_x: i32, target_y: i32, cfg: &MouseConfig) {
+    if !cfg.smooth_move {
+        enigo.mouse_move_to(target_x, target_y);
+        return;
+    }
+
+    let (start_x, start_y) = enigo.mouse_location();
+    let dx = target_x - start_x;
+    let dy = target_y - start_y;
+
+    if dx == 0 && dy == 0 {
+        return;
+    }
+
+    let distance = ((dx as f64).powi(2) + (dy as f64).powi(2)).sqrt();
+    let mut rng = FastRng::new(seed_for_mouse_move(start_x, start_y, target_x, target_y));
+    let base_step_ms = cfg.move_step_ms.max(1) as u64;
+    // Distance-based pacing: keep short moves precise, speed up longer jumps.
+    let distance_boost = (distance / cfg.distance_boost_px.max(1.0)).clamp(0.0, 1.0);
+    let duration_randomness = cfg.duration_randomness.clamp(0.0, 0.95);
+    let duration_scale_min = (1.0 - duration_randomness).max(0.05);
+    let duration_scale_max = 1.0 + duration_randomness;
+    let duration_scale = rng.range_f64(duration_scale_min, duration_scale_max)
+        * (1.0 - cfg.duration_distance_boost.clamp(0.0, 0.95) * distance_boost);
+    let move_duration_ms = ((cfg.move_duration_ms.max(1) as f64) * duration_scale)
+        .round()
+        .clamp(18.0, 1400.0) as u64;
+    let time_steps = (move_duration_ms + base_step_ms - 1) / base_step_ms;
+    let adaptive_stride_px = (cfg.adaptive_stride_base_px
+        + distance * cfg.adaptive_stride_distance_ratio.max(0.0))
+    .clamp(
+        cfg.adaptive_stride_base_px.max(0.5),
+        cfg.adaptive_stride_max_px.max(cfg.adaptive_stride_base_px.max(0.5)),
+    );
+    let distance_steps = (distance / adaptive_stride_px).ceil() as u64;
+    let extra_steps = rng.range_u64_inclusive(0, cfg.extra_steps_max as u64);
+    let steps = time_steps
+        .max(distance_steps)
+        .saturating_add(extra_steps)
+        .clamp(2, cfg.max_steps.max(2) as u64);
+
+    let start_xf = start_x as f64;
+    let start_yf = start_y as f64;
+    let target_xf = target_x as f64;
+    let target_yf = target_y as f64;
+    let dir_x = dx as f64 / distance;
+    let dir_y = dy as f64 / distance;
+    let perp_x = -dir_y;
+    let perp_y = dir_x;
+
+    let mid_x = (start_xf + target_xf) * 0.5;
+    let mid_y = (start_yf + target_yf) * 0.5;
+    let along_ratio = cfg.curve_along_ratio.clamp(0.0, 1.0);
+    let spread_ratio = cfg.curve_spread_ratio.clamp(0.0, 1.0);
+    let along_shift = distance * rng.range_f64(-along_ratio, along_ratio);
+    let lateral_span_raw = distance * spread_ratio;
+    let lateral_span = if lateral_span_raw <= 0.0 {
+        0.0
+    } else {
+        lateral_span_raw.clamp(1.5, 22.0)
+    };
+    let ctrl_x =
+        mid_x + (dir_x * along_shift) + (perp_x * lateral_span * rng.range_f64(-1.0, 1.0));
+    let ctrl_y =
+        mid_y + (dir_y * along_shift) + (perp_y * lateral_span * rng.range_f64(-1.0, 1.0));
+    let jitter_ratio = cfg.jitter_ratio.clamp(0.0, 0.2);
+    let jitter_base = if jitter_ratio <= 0.0 {
+        0.0
+    } else {
+        (distance * jitter_ratio).clamp(0.35, 2.6)
+    };
+
+    for step in 1..=steps {
+        let raw_t = step as f64 / steps as f64;
+        let t = ease_in_out_cubic(raw_t);
+        let one_minus_t = 1.0 - t;
+        let mut x = one_minus_t.powi(2) * start_xf
+            + (2.0 * one_minus_t * t * ctrl_x)
+            + (t.powi(2) * target_xf);
+        let mut y = one_minus_t.powi(2) * start_yf
+            + (2.0 * one_minus_t * t * ctrl_y)
+            + (t.powi(2) * target_yf);
+
+        if step < steps && jitter_base > 0.0 {
+            // Jitter fades in/out near endpoints, so start/end still land cleanly.
+            let envelope = (std::f64::consts::PI * raw_t).sin().max(0.0);
+            let jitter = jitter_base * envelope;
+            x += rng.range_f64(-jitter, jitter);
+            y += rng.range_f64(-jitter, jitter);
+        }
+
+        enigo.mouse_move_to(x.round() as i32, y.round() as i32);
+
+        if step < steps {
+            let sleep_center = 1.0 - (cfg.step_distance_boost.clamp(0.0, 0.95) * distance_boost);
+            let step_randomness = cfg.step_randomness.clamp(0.0, 0.95);
+            let sleep_min = (sleep_center - step_randomness).clamp(0.1, 1.5);
+            let sleep_max = (sleep_center + step_randomness).clamp(sleep_min, 2.0);
+            let sleep_scale = rng.range_f64(sleep_min, sleep_max);
+            let sleep_ms = ((base_step_ms as f64) * sleep_scale)
+                .round()
+                .clamp(1.0, cfg.max_step_sleep_ms.max(1) as f64) as u64;
+            std::thread::sleep(Duration::from_millis(sleep_ms));
+        }
+    }
+
+    enigo.mouse_move_to(target_x, target_y);
+}
+
+fn ease_in_out_cubic(t: f64) -> f64 {
+    if t <= 0.0 {
+        return 0.0;
+    }
+    if t >= 1.0 {
+        return 1.0;
+    }
+    if t < 0.5 {
+        4.0 * t.powi(3)
+    } else {
+        1.0 - ((-2.0 * t + 2.0).powi(3) / 2.0)
+    }
+}
+
+fn seed_for_mouse_move(start_x: i32, start_y: i32, target_x: i32, target_y: i32) -> u64 {
+    let now_nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let pid = std::process::id() as u64;
+    let p0 = (start_x as i64 as u64).rotate_left(11) ^ (start_y as i64 as u64).rotate_left(23);
+    let p1 = (target_x as i64 as u64).rotate_left(37) ^ (target_y as i64 as u64).rotate_left(47);
+    now_nanos ^ pid.rotate_left(17) ^ p0 ^ p1 ^ 0x9e37_79b9_7f4a_7c15
+}
+
+fn seed_for_landing(base_x: i32, base_y: i32) -> u64 {
+    let now_nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let pid = std::process::id() as u64;
+    let p = (base_x as i64 as u64).rotate_left(13) ^ (base_y as i64 as u64).rotate_left(29);
+    now_nanos ^ pid.rotate_left(7) ^ p ^ 0x517c_c1b7_2722_0a95
+}
+
+#[derive(Debug, Clone)]
+struct FastRng {
+    state: u64,
+}
+
+impl FastRng {
+    fn new(seed: u64) -> Self {
+        let state = if seed == 0 { 0xa076_1d64_78bd_642f } else { seed };
+        Self { state }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        // xorshift64* PRNG: fast and sufficient for movement jitter randomness.
+        let mut x = self.state;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.state = x;
+        x.wrapping_mul(0x2545_f491_4f6c_dd1d)
+    }
+
+    fn next_f64(&mut self) -> f64 {
+        // [0, 1) range with 53-bit precision
+        let value = self.next_u64() >> 11;
+        (value as f64) / ((1u64 << 53) as f64)
+    }
+
+    fn range_f64(&mut self, min: f64, max: f64) -> f64 {
+        if !min.is_finite() || !max.is_finite() || max <= min {
+            return min;
+        }
+        min + (max - min) * self.next_f64()
+    }
+
+    fn range_u64_inclusive(&mut self, min: u64, max: u64) -> u64 {
+        if max <= min {
+            return min;
+        }
+        let span = max - min + 1;
+        min + (self.next_u64() % span)
+    }
+
+    fn range_i32_inclusive(&mut self, min: i32, max: i32) -> i32 {
+        if max <= min {
+            return min;
+        }
+        let span = (max as i64 - min as i64 + 1) as u64;
+        min + (self.next_u64() % span) as i32
+    }
+}
+
+fn click_mouse_button(enigo: &mut Enigo, button: MouseButton, press_duration_ms: u32) {
+    if press_duration_ms == 0 {
+        enigo.mouse_click(button);
+        return;
+    }
+
+    enigo.mouse_down(button);
+    std::thread::sleep(Duration::from_millis(press_duration_ms as u64));
+    enigo.mouse_up(button);
 }
 
 // stub key sequence removed; we only advance on real input

@@ -58,6 +58,27 @@ export interface AppConfig {
   nudge: {
     stepPx: number;
   };
+  mouse: {
+    smoothMove: boolean;
+    moveDurationMs: number;
+    moveStepMs: number;
+    pressDurationMs: number;
+    landingRadiusPx: number;
+    durationRandomness: number;
+    stepRandomness: number;
+    distanceBoostPx: number;
+    durationDistanceBoost: number;
+    stepDistanceBoost: number;
+    curveAlongRatio: number;
+    curveSpreadRatio: number;
+    jitterRatio: number;
+    adaptiveStrideBasePx: number;
+    adaptiveStrideDistanceRatio: number;
+    adaptiveStrideMaxPx: number;
+    extraStepsMax: number;
+    maxSteps: number;
+    maxStepSleepMs: number;
+  };
   layers: Layer[];
   overlay: {
     alpha: number;

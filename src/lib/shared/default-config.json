@@ -23,6 +23,27 @@
   "nudge": {
     "stepPx": 5
   },
+  "mouse": {
+    "smoothMove": true,
+    "moveDurationMs": 120,
+    "moveStepMs": 8,
+    "pressDurationMs": 24,
+    "landingRadiusPx": 1,
+    "durationRandomness": 0.24,
+    "stepRandomness": 0.22,
+    "distanceBoostPx": 1800,
+    "durationDistanceBoost": 0.28,
+    "stepDistanceBoost": 0.42,
+    "curveAlongRatio": 0.08,
+    "curveSpreadRatio": 0.12,
+    "jitterRatio": 0.01,
+    "adaptiveStrideBasePx": 7,
+    "adaptiveStrideDistanceRatio": 0.026,
+    "adaptiveStrideMaxPx": 42,
+    "extraStepsMax": 6,
+    "maxSteps": 220,
+    "maxStepSleepMs": 24
+  },
   "layers": [
     {
       "mode": "combo",
